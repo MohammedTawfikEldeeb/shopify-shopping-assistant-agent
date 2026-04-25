@@ -136,8 +136,8 @@ class ProductRepository(BaseRepository[Product]):
 
         product.handle = payload.get("handle") or str(shopify_product_id)
         product.title = payload.get("title") or product.handle
-        product.body_html = payload.get("body_html")
-        product.body_text = self._html_to_text(payload.get("body_html"))
+        clean_source = payload.get("body_html") or payload.get("body_text")
+        product.description = self._html_to_text(clean_source)
         product.vendor = payload.get("vendor")
         product.product_type = payload.get("product_type")
         product.published_at = self._parse_dt(payload.get("published_at"))
