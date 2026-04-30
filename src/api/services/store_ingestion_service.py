@@ -41,6 +41,16 @@ class StoreIngestionService:
         ingested_count = 0
         failed_count = 0
 
+        # Get or create store
+        store_id = self._product_repository.get_store_id_by_domain(normalized_store.domain)
+        if not store_id:
+            self._logger.info(f"Store not found for domain {normalized_store.domain}, creating new store")
+            store_id = self._product_repository.upsert_store_and_get_id(
+                domain_or_url=normalized_store.base_url,
+                shop_name=normalized_store.domain,
+            )
+            self._logger.info(f"Created new store with ID={store_id} for domain={normalized_store.domain}")
+
         for product_payload in products:
             try:
                 self._product_repository.upsert_product_from_shopify(

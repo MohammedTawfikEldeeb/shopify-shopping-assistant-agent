@@ -5,7 +5,7 @@ from typing import ClassVar
 
 class PostgresSettings(BaseModel):
     host: str = Field(default="localhost")
-    port: int = Field(default=5432)
+    port: int = Field(default=5433)
     database: str = Field(default="shopify_assistant")
     user: str = Field(default="shopify_user")
     password: str = Field(default="shopify_password")
@@ -21,8 +21,20 @@ class PostgresSettings(BaseModel):
         return f"postgresql+asyncpg://{self.user}:{self.password}@{self.host}:{self.port}/{self.database}"
 
 
+class QdrantSettings(BaseModel):
+    environment: str = Field(default="local")  # 'local' or 'cloud'
+    url: str | None = Field(default=None)  # Cloud URL only
+    host: str = Field(default="localhost")  # Local host only
+    port: int = Field(default=6333)  # Local port only
+    api_key: str | None = Field(default=None)
+    collection_name: str = Field(default="products")
+
+
+
+
 class Settings(BaseSettings):
     postgres: PostgresSettings = PostgresSettings()
+    qdrant: QdrantSettings = QdrantSettings()
 
     model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(
         env_file=[".env"],
@@ -32,4 +44,5 @@ class Settings(BaseSettings):
         case_sensitive=False,
         frozen=True,
     )
+
 settings = Settings()

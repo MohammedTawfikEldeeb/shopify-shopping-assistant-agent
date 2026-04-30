@@ -15,4 +15,5 @@ dependencies = [
     "psycopg2-binary==2.9.12",
     "uvicorn==0.34.2",
     "pgvector==0.4.2",
+    "qdrant-client==1.17.1",
 ]

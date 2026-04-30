@@ -66,6 +66,33 @@ class ProductRepository(BaseRepository[Product]):
         with get_session(self.session_factory) as session:
             return session.scalar(select(Store).where(Store.domain == self._normalize_domain(domain)))
 
+    def get_store_id_by_domain(self, domain: str) -> Optional[int]:
+        """Get store ID by domain (returns just the ID to avoid detached instance issues)"""
+        with get_session(self.session_factory) as session:
+            store = session.scalar(select(Store).where(Store.domain == self._normalize_domain(domain)))
+            return store.id if store else None
+
+    def upsert_store_and_get_id(
+        self,
+        domain_or_url: str,
+        *,
+        shop_name: str | None = None,
+        currency_code: str | None = None,
+        raw_metadata: dict[str, Any] | None = None,
+    ) -> int:
+        """Upsert store and return just the ID to avoid detached instance issues"""
+        with get_session(self.session_factory) as session:
+            store = self._upsert_store_in_session(
+                session,
+                domain_or_url=domain_or_url,
+                shop_name=shop_name,
+                currency_code=currency_code,
+                raw_metadata=raw_metadata,
+            )
+            session.flush()
+            store_id = store.id
+            return store_id
+
     def upsert_store(
         self,
         domain_or_url: str,

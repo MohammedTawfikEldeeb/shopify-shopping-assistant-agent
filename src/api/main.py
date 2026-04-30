@@ -2,11 +2,13 @@ from time import perf_counter
 
 from fastapi import FastAPI, Request
 from loguru import logger
+from qdrant_client import QdrantClient
 
 from src.api.routes import indexing_router, system_router
 from src.api.services import StoreIngestionService
 from src.config import settings
 from src.db.factory import DBType, DatabaseFactory
+from src.db.repositories.product_repository import ProductRepository
 from src.utils.logger_util import setup_logging
 
 
@@ -23,11 +25,42 @@ def on_startup() -> None:
 	setup_logging()
 	logger.info("Starting API service")
 
+	# Initialize Database
 	db_factory = DatabaseFactory.create(DBType.POSTGRES, settings.postgres.url)
 	logger.info("Database schema management is handled by Alembic migrations")
 
+	# Initialize Qdrant Vector DB
+	qdrant_config = settings.qdrant
+	try:
+		if qdrant_config.environment.lower() == "cloud":
+			logger.info(f"Connecting to Qdrant Cloud at {qdrant_config.url}")
+			qdrant_client = QdrantClient(
+				url=qdrant_config.url,
+				api_key=qdrant_config.api_key,
+				prefer_grpc=False,
+			)
+		else:
+			logger.info(f"Connecting to local Qdrant at {qdrant_config.host}:{qdrant_config.port}")
+			qdrant_client = QdrantClient(
+				host=qdrant_config.host,
+				port=qdrant_config.port,
+				prefer_grpc=False,
+			)
+		logger.info(f"Qdrant connected successfully. Collection: {qdrant_config.collection_name}")
+	except Exception as e:
+		logger.error(f"Failed to connect to Qdrant: {e}")
+		raise
+
 	app.state.db_factory = db_factory
-	app.state.store_ingestion_service = StoreIngestionService(db_factory.product_repository, logger=logger)
+	app.state.qdrant_client = qdrant_client
+	
+	# Initialize repositories
+	product_repository = ProductRepository(db_factory.session_factory)
+	
+	app.state.store_ingestion_service = StoreIngestionService(
+		product_repository,
+		logger=logger
+	)
 	logger.info("API startup complete")
 
 

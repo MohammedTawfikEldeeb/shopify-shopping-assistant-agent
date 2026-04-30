@@ -1,4 +1,13 @@
-from .products_details import Product, ProductImage, ProductOption, ProductOptionValue, ProductVariant, Store, SyncStatus, VariantImageLink
+from .products_details import (
+    Product,
+    ProductImage,
+    ProductOption,
+    ProductOptionValue,
+    ProductVariant,
+    Store,
+    SyncStatus,
+    VariantImageLink,
+)
 
 __all__ = [
     "Product",
