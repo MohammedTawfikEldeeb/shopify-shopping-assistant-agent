@@ -5,7 +5,7 @@ from loguru import logger
 from qdrant_client import QdrantClient
 
 from src.api.routes import indexing_router, system_router
-from src.api.services import StoreIngestionService
+from src.api.services import StoreIngestionService, ProductIndexingService
 from src.config import settings
 from src.db.factory import DBType, DatabaseFactory
 from src.db.repositories.product_repository import ProductRepository
@@ -61,6 +61,9 @@ def on_startup() -> None:
 		product_repository,
 		logger=logger
 	)
+		
+	# Initialize Product Indexing Service
+	app.state.product_indexing_service = ProductIndexingService()
 	logger.info("API startup complete")
 
 

@@ -33,6 +33,7 @@ class QdrantSettings(BaseModel):
 
 
 class Settings(BaseSettings):
+    vector_db_provider: str = Field(default="PGVECTOR")
     postgres: PostgresSettings = PostgresSettings()
     qdrant: QdrantSettings = QdrantSettings()
 
@@ -46,3 +47,6 @@ class Settings(BaseSettings):
     )
 
 settings = Settings()
+
+def get_settings() -> Settings:
+    return settings

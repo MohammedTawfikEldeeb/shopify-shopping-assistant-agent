@@ -16,4 +16,6 @@ dependencies = [
     "uvicorn==0.34.2",
     "pgvector==0.4.2",
     "qdrant-client==1.17.1",
+    "fastembed==0.8.0",
+    "asyncpg>=0.31.0",
 ]

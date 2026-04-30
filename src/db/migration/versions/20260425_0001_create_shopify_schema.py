@@ -10,6 +10,7 @@ from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 
 
 # revision identifiers, used by Alembic.
@@ -24,7 +25,7 @@ def upgrade() -> None:
 
     op.create_table(
         "stores",
-        sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
+        sa.Column("id", postgresql.UUID(as_uuid=False), server_default=sa.text("gen_random_uuid()"), nullable=False),
         sa.Column("domain", sa.String(length=255), nullable=False),
         sa.Column("base_url", sa.String(length=512), nullable=False),
         sa.Column("shop_name", sa.String(length=255), nullable=True),
@@ -39,13 +40,12 @@ def upgrade() -> None:
 
     op.create_table(
         "products",
-        sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
-        sa.Column("store_id", sa.Integer(), nullable=False),
+        sa.Column("id", postgresql.UUID(as_uuid=False), server_default=sa.text("gen_random_uuid()"), nullable=False),
+        sa.Column("store_id", postgresql.UUID(as_uuid=False), nullable=False),
         sa.Column("shopify_product_id", sa.BigInteger(), nullable=False),
         sa.Column("handle", sa.String(length=255), nullable=False),
         sa.Column("title", sa.String(length=512), nullable=False),
-        sa.Column("body_html", sa.Text(), nullable=True),
-        sa.Column("body_text", sa.Text(), nullable=True),
+        sa.Column("description", sa.Text(), nullable=True),
         sa.Column("vendor", sa.String(length=255), nullable=True),
         sa.Column("product_type", sa.String(length=255), nullable=True),
         sa.Column("published_at", sa.DateTime(timezone=True), nullable=True),
@@ -64,8 +64,8 @@ def upgrade() -> None:
 
     op.create_table(
         "product_images",
-        sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
-        sa.Column("product_id", sa.Integer(), nullable=False),
+        sa.Column("id", postgresql.UUID(as_uuid=False), server_default=sa.text("gen_random_uuid()"), nullable=False),
+        sa.Column("product_id", postgresql.UUID(as_uuid=False), nullable=False),
         sa.Column("shopify_image_id", sa.BigInteger(), nullable=False),
         sa.Column("src", sa.String(length=1024), nullable=False),
         sa.Column("alt_text", sa.String(length=512), nullable=True),
@@ -85,8 +85,8 @@ def upgrade() -> None:
 
     op.create_table(
         "product_options",
-        sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
-        sa.Column("product_id", sa.Integer(), nullable=False),
+        sa.Column("id", postgresql.UUID(as_uuid=False), server_default=sa.text("gen_random_uuid()"), nullable=False),
+        sa.Column("product_id", postgresql.UUID(as_uuid=False), nullable=False),
         sa.Column("name", sa.String(length=255), nullable=False),
         sa.Column("position", sa.Integer(), nullable=True),
         sa.ForeignKeyConstraint(["product_id"], ["products.id"], ondelete="CASCADE"),
@@ -97,8 +97,8 @@ def upgrade() -> None:
 
     op.create_table(
         "product_variants",
-        sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
-        sa.Column("product_id", sa.Integer(), nullable=False),
+        sa.Column("id", postgresql.UUID(as_uuid=False), server_default=sa.text("gen_random_uuid()"), nullable=False),
+        sa.Column("product_id", postgresql.UUID(as_uuid=False), nullable=False),
         sa.Column("shopify_variant_id", sa.BigInteger(), nullable=False),
         sa.Column("title", sa.String(length=255), nullable=False),
         sa.Column("sku", sa.String(length=128), nullable=True),
@@ -126,8 +126,8 @@ def upgrade() -> None:
 
     op.create_table(
         "product_option_values",
-        sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
-        sa.Column("option_id", sa.Integer(), nullable=False),
+        sa.Column("id", postgresql.UUID(as_uuid=False), server_default=sa.text("gen_random_uuid()"), nullable=False),
+        sa.Column("option_id", postgresql.UUID(as_uuid=False), nullable=False),
         sa.Column("value", sa.String(length=255), nullable=False),
         sa.Column("position", sa.Integer(), nullable=True),
         sa.ForeignKeyConstraint(["option_id"], ["product_options.id"], ondelete="CASCADE"),
@@ -138,9 +138,9 @@ def upgrade() -> None:
 
     op.create_table(
         "variant_image_links",
-        sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
-        sa.Column("variant_id", sa.Integer(), nullable=False),
-        sa.Column("image_id", sa.Integer(), nullable=False),
+        sa.Column("id", postgresql.UUID(as_uuid=False), server_default=sa.text("gen_random_uuid()"), nullable=False),
+        sa.Column("variant_id", postgresql.UUID(as_uuid=False), nullable=False),
+        sa.Column("image_id", postgresql.UUID(as_uuid=False), nullable=False),
         sa.ForeignKeyConstraint(["variant_id"], ["product_variants.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["image_id"], ["product_images.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),

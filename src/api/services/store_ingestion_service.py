@@ -82,6 +82,7 @@ class StoreIngestionService:
             "total_products_received": len(products),
             "products_ingested": ingested_count,
             "products_failed": failed_count,
+            "products": products,
         }
 
     def _fetch_products(self, products_url: str) -> list[dict[str, Any]]:

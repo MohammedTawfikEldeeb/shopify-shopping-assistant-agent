@@ -1,4 +1,5 @@
 from pydantic import BaseModel, Field
+from typing import Optional
 
 
 class IndexStoreRequest(BaseModel):
@@ -12,3 +13,7 @@ class IndexStoreResponse(BaseModel):
     total_products_received: int
     products_ingested: int
     products_failed: int
+    vectors_indexed: int = 0
+    vectors_skipped: int = 0
+    vectors_failed: int = 0
+    indexing_errors: list[str] = Field(default_factory=list)

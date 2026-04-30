@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import uuid
 from datetime import datetime
 from decimal import Decimal
 from html import unescape
@@ -32,7 +33,7 @@ class ProductRepository(BaseRepository[Product]):
     def __init__(self, session_factory: sessionmaker):
         self.session_factory = session_factory
 
-    def get_by_id(self, id: int) -> Optional[Product]:
+    def get_by_id(self, id: uuid.UUID) -> Optional[Product]:
         with get_session(self.session_factory) as session:
             return session.get(Product, id)
 
@@ -54,7 +55,7 @@ class ProductRepository(BaseRepository[Product]):
             session.refresh(merged)
             return merged
 
-    def delete(self, id: int) -> bool:
+    def delete(self, id: uuid.UUID) -> bool:
         with get_session(self.session_factory) as session:
             product = session.get(Product, id)
             if product is None:
@@ -66,7 +67,7 @@ class ProductRepository(BaseRepository[Product]):
         with get_session(self.session_factory) as session:
             return session.scalar(select(Store).where(Store.domain == self._normalize_domain(domain)))
 
-    def get_store_id_by_domain(self, domain: str) -> Optional[int]:
+    def get_store_id_by_domain(self, domain: str) -> Optional[uuid.UUID]:
         """Get store ID by domain (returns just the ID to avoid detached instance issues)"""
         with get_session(self.session_factory) as session:
             store = session.scalar(select(Store).where(Store.domain == self._normalize_domain(domain)))
@@ -79,7 +80,7 @@ class ProductRepository(BaseRepository[Product]):
         shop_name: str | None = None,
         currency_code: str | None = None,
         raw_metadata: dict[str, Any] | None = None,
-    ) -> int:
+    ) -> uuid.UUID:
         """Upsert store and return just the ID to avoid detached instance issues"""
         with get_session(self.session_factory) as session:
             store = self._upsert_store_in_session(

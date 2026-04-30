@@ -20,10 +20,11 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    op.alter_column("products", "body_text", new_column_name="description")
-    op.drop_column("products", "body_html")
+    # First migration already creates description column directly,
+    # so this is now a no-op for fresh installs.
+    # Keeping the migration file for history/rollback compatibility.
+    pass
 
 
 def downgrade() -> None:
-    op.add_column("products", sa.Column("body_html", sa.Text(), nullable=True))
-    op.alter_column("products", "description", new_column_name="body_text")
+    pass

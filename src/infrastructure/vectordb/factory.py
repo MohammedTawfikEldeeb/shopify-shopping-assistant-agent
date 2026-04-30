@@ -3,6 +3,7 @@ from qdrant_client import QdrantClient
 from src.config import get_settings
 from src.infrastructure.vectordb.enum import VectorDBEnums
 from src.infrastructure.vectordb.providers.qdrant import QdrantVectorDBProvider
+from src.infrastructure.vectordb.providers.pgvector import PGVectorProvider
 
 
 class VectorDBFactory:
@@ -35,6 +36,13 @@ class VectorDBFactory:
                 client=qdrant_db_client,
                 default_vector_size=qdrant_settings.vector_size,
                 distance_method=qdrant_settings.distance_metric,
+            )
+        elif normalized_provider == VectorDBEnums.PGVector.value:
+            from src.db.session import SessionLocal
+            return PGVectorProvider(
+                db_client=SessionLocal,
+                default_vector_size=1536,
+                distance_method="cosine",
             )
 
         raise ValueError(f"Unsupported vector database provider: {provider}")

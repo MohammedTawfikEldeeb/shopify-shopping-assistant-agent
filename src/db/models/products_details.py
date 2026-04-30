@@ -15,6 +15,7 @@ from sqlalchemy import (
     Numeric,
     String,
     Text,
+    Uuid,
     UniqueConstraint,
     func,
 )
@@ -33,7 +34,7 @@ class SyncStatus(StrEnum):
 class Store(Base):
     __tablename__ = "stores"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    id: Mapped[Uuid] = mapped_column(Uuid, primary_key=True, server_default=func.gen_random_uuid())
     domain: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     base_url: Mapped[str] = mapped_column(String(512))
     shop_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -55,8 +56,8 @@ class Product(Base):
         Index("ix_products_store_handle", "store_id", "handle"),
     )
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    store_id: Mapped[int] = mapped_column(ForeignKey("stores.id", ondelete="CASCADE"), index=True)
+    id: Mapped[Uuid] = mapped_column(Uuid, primary_key=True, server_default=func.gen_random_uuid())
+    store_id: Mapped[Uuid] = mapped_column(ForeignKey("stores.id", ondelete="CASCADE"), index=True)
     shopify_product_id: Mapped[int] = mapped_column(BigInteger)
     handle: Mapped[str] = mapped_column(String(255))
     title: Mapped[str] = mapped_column(String(512))
@@ -91,8 +92,8 @@ class ProductVariant(Base):
         UniqueConstraint("product_id", "shopify_variant_id", name="uq_variants_product_shopify_variant_id"),
     )
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    product_id: Mapped[int] = mapped_column(ForeignKey("products.id", ondelete="CASCADE"), index=True)
+    id: Mapped[Uuid] = mapped_column(Uuid, primary_key=True, server_default=func.gen_random_uuid())
+    product_id: Mapped[Uuid] = mapped_column(ForeignKey("products.id", ondelete="CASCADE"), index=True)
     shopify_variant_id: Mapped[int] = mapped_column(BigInteger)
     title: Mapped[str] = mapped_column(String(255))
     sku: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
@@ -124,8 +125,8 @@ class ProductImage(Base):
         UniqueConstraint("product_id", "shopify_image_id", name="uq_images_product_shopify_image_id"),
     )
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    product_id: Mapped[int] = mapped_column(ForeignKey("products.id", ondelete="CASCADE"), index=True)
+    id: Mapped[Uuid] = mapped_column(Uuid, primary_key=True, server_default=func.gen_random_uuid())
+    product_id: Mapped[Uuid] = mapped_column(ForeignKey("products.id", ondelete="CASCADE"), index=True)
     shopify_image_id: Mapped[int] = mapped_column(BigInteger)
     src: Mapped[str] = mapped_column(String(1024))
     alt_text: Mapped[str | None] = mapped_column(String(512), nullable=True)
@@ -152,9 +153,9 @@ class VariantImageLink(Base):
         UniqueConstraint("variant_id", "image_id", name="uq_variant_image_links_variant_id_image_id"),
     )
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    variant_id: Mapped[int] = mapped_column(ForeignKey("product_variants.id", ondelete="CASCADE"), index=True)
-    image_id: Mapped[int] = mapped_column(ForeignKey("product_images.id", ondelete="CASCADE"), index=True)
+    id: Mapped[Uuid] = mapped_column(Uuid, primary_key=True, server_default=func.gen_random_uuid())
+    variant_id: Mapped[Uuid] = mapped_column(ForeignKey("product_variants.id", ondelete="CASCADE"), index=True)
+    image_id: Mapped[Uuid] = mapped_column(ForeignKey("product_images.id", ondelete="CASCADE"), index=True)
 
     variant: Mapped["ProductVariant"] = relationship(back_populates="image_links")
     image: Mapped["ProductImage"] = relationship(back_populates="variant_links")
@@ -166,8 +167,8 @@ class ProductOption(Base):
         UniqueConstraint("product_id", "name", name="uq_product_options_product_id_name"),
     )
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    product_id: Mapped[int] = mapped_column(ForeignKey("products.id", ondelete="CASCADE"), index=True)
+    id: Mapped[Uuid] = mapped_column(Uuid, primary_key=True, server_default=func.gen_random_uuid())
+    product_id: Mapped[Uuid] = mapped_column(ForeignKey("products.id", ondelete="CASCADE"), index=True)
     name: Mapped[str] = mapped_column(String(255))
     position: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
@@ -183,8 +184,8 @@ class ProductOptionValue(Base):
         UniqueConstraint("option_id", "value", name="uq_product_option_values_option_id_value"),
     )
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    option_id: Mapped[int] = mapped_column(ForeignKey("product_options.id", ondelete="CASCADE"), index=True)
+    id: Mapped[Uuid] = mapped_column(Uuid, primary_key=True, server_default=func.gen_random_uuid())
+    option_id: Mapped[Uuid] = mapped_column(ForeignKey("product_options.id", ondelete="CASCADE"), index=True)
     value: Mapped[str] = mapped_column(String(255))
     position: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
