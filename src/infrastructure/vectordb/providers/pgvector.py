@@ -329,11 +329,15 @@ class PGVectorProvider(VectorDBInterface):
         vector = "[" + ",".join([ str(v) for v in vector ]) + "]"
         async with self.db_client() as session:
             async with session.begin():
-                search_sql = sql_text(f'SELECT {PgVectorTableSchemeEnums.TEXT.value} as text, 1 - ({PgVectorTableSchemeEnums.VECTOR.value} <=> :vector) as score'
-                                      f' FROM {collection_name}'
-                                      ' ORDER BY score DESC '
-                                      f'LIMIT {limit}'
-                                      )
+                search_sql = sql_text(
+                    f'SELECT {PgVectorTableSchemeEnums.TEXT.value} as text, '
+                    f'{PgVectorTableSchemeEnums.METADATA.value} as metadata, '
+                    f'{PgVectorTableSchemeEnums.CHUNK_ID.value} as chunk_id, '
+                    f'1 - ({PgVectorTableSchemeEnums.VECTOR.value} <=> :vector) as score '
+                    f'FROM {collection_name} '
+                    'ORDER BY score DESC '
+                    f'LIMIT {limit}'
+                )
                 
                 result = await session.execute(search_sql, {"vector": vector})
 
@@ -341,10 +345,13 @@ class PGVectorProvider(VectorDBInterface):
 
                 return [
                     {
-                        "id": record.id if hasattr(record, 'id') else None,
+                        "id": record.chunk_id,
                         "text": record.text,
                         "score": record.score,
-                        "payload": {"text": record.text}
+                        "payload": {
+                            "text": record.text,
+                            "metadata": record.metadata if isinstance(record.metadata, dict) else json.loads(record.metadata or "{}"),
+                        }
                     }
                     for record in records
                 ]

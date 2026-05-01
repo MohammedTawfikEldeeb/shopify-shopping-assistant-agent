@@ -4,11 +4,13 @@ from fastapi import FastAPI, Request
 from loguru import logger
 from qdrant_client import QdrantClient
 
-from src.api.routes import indexing_router, system_router
+from src.agent import ShoppingAgent
+from src.api.routes import chat_router, indexing_router, system_router
 from src.api.services import StoreIngestionService, ProductIndexingService
 from src.config import settings
 from src.db.factory import DBType, DatabaseFactory
 from src.db.repositories.product_repository import ProductRepository
+from src.utils.embedding_service import embed_query
 from src.utils.logger_util import setup_logging
 
 
@@ -18,6 +20,7 @@ app = FastAPI(
 )
 app.include_router(system_router)
 app.include_router(indexing_router)
+app.include_router(chat_router)
 
 
 @app.on_event("startup")
@@ -64,6 +67,16 @@ def on_startup() -> None:
 		
 	# Initialize Product Indexing Service
 	app.state.product_indexing_service = ProductIndexingService()
+
+	# Initialize Shopping Agent (pre-warms LLM + vector DB connections)
+	app.state.shopping_agent = ShoppingAgent()
+	logger.info("Shopping agent initialized")
+
+	# Warm up embedding model (lazy-loaded by default — force load now to avoid first-request latency)
+	logger.info("Warming up embedding model...")
+	embed_query("warmup")
+	logger.info("Embedding model ready")
+
 	logger.info("API startup complete")
 
 

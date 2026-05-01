@@ -30,12 +30,33 @@ class QdrantSettings(BaseModel):
     collection_name: str = Field(default="products")
 
 
+class LLMSettings(BaseModel):
+    provider: str = Field(default="groq" , description="The LLM provider backend")
 
+class LLMModelSettings(BaseModel):
+    name: str = Field(default="openai/gpt-oss-120b" , description="The model name for the configured LLM provider")
+
+class OpenRouterAPISettings(BaseModel):
+    key: str | None = Field(default=None , description="The OpenRouter API key")
+    base_url: str = Field(default="https://openrouter.ai/api/v1" , description="The OpenRouter API base URL")
+
+class GroqAPISettings(BaseModel):
+    key: str | None = Field(default=None , description="The Groq API key")
+    base_url: str = Field(default="https://api.groq.com/openai/v1" , description="The Groq API base URL")
+
+class OpikSettings(BaseModel):
+    api_key: str = Field(default="", description="Opik API Key")
+    project_name: str = Field(default="shopify-shopping-assistant-agent", description="Opik Project Name")
 
 class Settings(BaseSettings):
     vector_db_provider: str = Field(default="PGVECTOR")
     postgres: PostgresSettings = PostgresSettings()
     qdrant: QdrantSettings = QdrantSettings()
+    llm: LLMSettings = LLMSettings()
+    llm_model: LLMModelSettings = LLMModelSettings()
+    groq_api: GroqAPISettings = GroqAPISettings()
+    openrouter_api: OpenRouterAPISettings = OpenRouterAPISettings()
+    opik: OpikSettings = OpikSettings()
 
     model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(
         env_file=[".env"],
