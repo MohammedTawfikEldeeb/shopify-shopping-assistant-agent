@@ -59,39 +59,72 @@ class ShoppingAgent:
         )
 
     def _build_system_prompt(self) -> str:
+        parts = [self.memory.get_context(), ""]
         if self.memory.last_products:
             lines = ["Previously found products:"]
             for p in self.memory.last_products:
                 lines.append(f"- {p['title']} (ID: {p['id']})")
-            context = "\n".join(lines)
+            parts.append("\n".join(lines))
         else:
-            context = "No products have been found yet. The user needs to search for products first."
+            parts.append("No products have been found yet.")
+        context = "\n".join(parts)
         return self._system_prompt.prompt.format(context=context, db_schema=DB_SCHEMA)
 
     @opik.track(name="agent.chat", type="general")
     async def chat(self, user_message: str) -> str:
+        self.memory.add("user", user_message)
+
         for turn in range(3):
             messages = [
                 {"role": "system", "content": self._build_system_prompt()},
                 {"role": "user", "content": user_message},
             ]
 
-            structured = self.llm.with_structured_output(AgentDecision)
-            decision = structured.invoke(messages)
+            decision = self._make_decision(messages)
 
             if decision.action == "retrieve":
-                return await self._handle_retrieve(decision.content)
+                response = await self._handle_retrieve(decision.content)
+                return await self._finalize(response)
 
             if decision.action == "sql_query":
                 observation = await self._execute_sql(decision.content)
                 if observation["rows"]:
-                    return self._summarize_results(user_message, json.dumps(observation["rows"], indent=2, default=str))
+                    response = self._summarize_results(user_message, json.dumps(observation["rows"], indent=2, default=str))
+                    return await self._finalize(response)
                 user_message = f"I tried this SQL: {decision.content}\nResult: {observation['message']}\nOriginal question: {user_message}\nPlease try again with a corrected query."
 
             elif decision.action == "answer":
-                return decision.content
+                return await self._finalize(decision.content)
 
-        return "Sorry, I couldn't find that information after multiple attempts."
+        return await self._finalize("Sorry, I couldn't find that information after multiple attempts.")
+
+    async def _finalize(self, response: str) -> str:
+        self.memory.add("assistant", response)
+        await self._maybe_summarize()
+        return response
+
+    async def _maybe_summarize(self):
+        if not self.memory.should_summarize():
+            return
+        oldest = self.memory.messages[:-2]
+        new_summary = self._summarize_conversation(self.memory.summary, oldest)
+        self.memory.summary = new_summary
+        self.memory.messages = self.memory.messages[-2:]
+
+    @opik.track(name="agent.summarize_conversation", type="llm")
+    def _summarize_conversation(self, old_summary: str, messages: list) -> str:
+        msgs_text = "\n".join(f"{m['role']}: {m['content']}" for m in messages)
+        prompt = [
+            {"role": "system", "content": "Summarize this conversation very briefly (1-2 sentences). Keep only key facts: products mentioned, user preferences, what was asked about."},
+            {"role": "user", "content": f"Old summary: {old_summary}\n\nNew messages:\n{msgs_text}"},
+        ]
+        response = self.llm.chat(prompt)
+        return response.choices[0].message.content
+
+    @opik.track(name="agent.make_decision", type="tool", capture_output=False)
+    def _make_decision(self, messages: list) -> AgentDecision:
+        structured = self.llm.with_structured_output(AgentDecision)
+        return structured.invoke(messages)
 
     async def _handle_retrieve(self, search_query: str) -> str:
         products = await self.retriever.search(search_query)
@@ -112,6 +145,7 @@ class ShoppingAgent:
         except Exception as e:
             return {"rows": [], "message": f"SQL error: {e}"}
 
+    @opik.track(name="agent.summarize_results", type="llm")
     def _summarize_results(self, user_message: str, result_text: str) -> str:
         fmt_messages = [
             {"role": "system", "content": "Summarize the following database results in a friendly, concise way for the user. Include specific prices, sizes, colors etc."},
