@@ -1,12 +1,12 @@
 import re
 import uuid
 from html import unescape
+from loguru import logger
+from typing import List, Dict, Any
+
 from src.utils.embedding_service import embed_batch
 from src.infrastructure.vectordb.providers.pgvector import PGVectorProvider
 from src.infrastructure.vectordb.enum import PgVectorDistanceMethodEnums
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-from loguru import logger
-from typing import List, Dict, Any
 
 
 _TAG_RE = re.compile(r"<[^>]+>")
@@ -17,20 +17,8 @@ PRODUCT_UUID_NAMESPACE = uuid.UUID("6ba7b810-9dad-11d1-80b4-00c04fd430c8")
 
 
 class ProductIndexingService:
-    def __init__(self, db_url: str | None = None):
-        if db_url is None:
-            from src.config import settings
-            db_url = settings.postgres.async_url
-
-        async_engine = create_async_engine(db_url)
-        async_session_factory = async_sessionmaker(async_engine, class_=AsyncSession)
-
-        self.vector_db = PGVectorProvider(
-            db_client=async_session_factory,
-            default_vector_size=384,
-            distance_method=PgVectorDistanceMethodEnums.COSINE.value
-        )
-
+    def __init__(self, vector_db: PGVectorProvider):
+        self.vector_db = vector_db
         self.collection_name = "product_vectors"
         self.logger = logger
 

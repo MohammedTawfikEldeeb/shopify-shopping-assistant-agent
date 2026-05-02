@@ -19,9 +19,9 @@ class QdrantVectorDBProvider(VectorDBInterface):
         self.client = client
         self.vector_size = default_vector_size or get_settings().qdrant.vector_size
         self.distance_method = models.Distance.COSINE
-        if distance_method == DistanceMetric.Cosine.value:
+        if distance_method == DistanceMetric.COSINE.value:
             self.distance_method = models.Distance.COSINE
-        elif distance_method == DistanceMetric.DotProduct.value:
+        elif distance_method == DistanceMetric.DOT_PRODUCT.value:
             self.distance_method = models.Distance.DOT
 
     def connect(self):

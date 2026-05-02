@@ -47,12 +47,17 @@ SQL examples:
 
 
 class ShoppingAgent:
-    def __init__(self, llm: LLMInterface | None = None):
+    def __init__(
+        self,
+        retriever: ProductRetriever,
+        sql_tool: SQLQueryTool,
+        llm: LLMInterface | None = None,
+    ):
         configure_opik()
         self.llm = llm or create_llm(get_settings().llm.provider)
         self.memory = ShortTermMemory()
-        self.retriever = ProductRetriever()
-        self.sql_tool = SQLQueryTool()
+        self.retriever = retriever
+        self.sql_tool = sql_tool
         self._system_prompt = Prompt(
             name="shopping-agent-system-prompt",
             prompt=_SYSTEM_PROMPT_TEMPLATE,
@@ -63,7 +68,20 @@ class ShoppingAgent:
         if self.memory.last_products:
             lines = ["Previously found products:"]
             for p in self.memory.last_products:
-                lines.append(f"- {p['title']} (ID: {p['id']})")
+                extra = []
+                if p.get("price"):
+                    extra.append(f"Price: ${p['price']}")
+                if p.get("link"):
+                    extra.append(f"Link: {p['link']}")
+                if p.get("available_sizes"):
+                    extra.append(f"Sizes: {', '.join(p['available_sizes'])}")
+                if p.get("available_colors"):
+                    extra.append(f"Colors: {', '.join(p['available_colors'])}")
+                line = f"- {p['title']} (ID: {p['id']}"
+                if extra:
+                    line += f", {', '.join(extra)}"
+                line += ")"
+                lines.append(line)
             parts.append("\n".join(lines))
         else:
             parts.append("No products have been found yet.")
@@ -131,7 +149,16 @@ class ShoppingAgent:
         self.memory.set_products(products)
         if not products:
             return "I couldn't find any products matching your request."
-        summary = "\n".join([f"- {p['title']} (ID: {p['id']})" for p in products])
+        summary_lines = []
+        for p in products:
+            line = f"- {p['title']} (ID: {p['id']}"
+            if p.get("price"):
+                line += f", Price: ${p['price']}"
+            if p.get("link"):
+                line += f", Link: {p['link']}"
+            line += ")"
+            summary_lines.append(line)
+        summary = "\n".join(summary_lines)
         return f"Here are some products I found:\n{summary}"
 
     async def _execute_sql(self, query: str) -> dict:

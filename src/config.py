@@ -28,6 +28,10 @@ class QdrantSettings(BaseModel):
     port: int = Field(default=6333)  # Local port only
     api_key: str | None = Field(default=None)
     collection_name: str = Field(default="products")
+    vector_size: int = Field(default=384)
+    distance_metric: str = Field(default="cosine")
+    prefer_grpc: bool = Field(default=False)
+    https: bool | None = Field(default=None)
 
 
 class LLMSettings(BaseModel):
