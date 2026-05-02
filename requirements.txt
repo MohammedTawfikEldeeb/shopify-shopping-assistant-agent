@@ -15,3 +15,6 @@ fastembed==0.8.0
 
 opik==2.0.20
 
+langchain>=0.3.0
+langgraph>=0.2.0
+langchain-openai>=0.3.0

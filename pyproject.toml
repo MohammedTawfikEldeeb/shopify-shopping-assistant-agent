@@ -21,4 +21,7 @@ dependencies = [
     "openai>=1.75.0",
     "langsmith>=0.8.0",
     "streamlit>=1.50.0",
+    "langchain>=0.3.0",
+    "langgraph>=0.2.0",
+    "langchain-openai>=0.3.0",
 ]

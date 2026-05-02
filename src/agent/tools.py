@@ -1,3 +1,4 @@
+import json
 import re
 from typing import Any
 
@@ -17,15 +18,23 @@ class ProductRetriever:
         self.sync_session_factory = sync_session_factory
 
     @staticmethod
-    def _title_matches_query(title: str | None, query: str) -> bool:
-        if not title:
-            return False
-        # Extract meaningful words (3+ chars) from query
+    def _product_matches_query(product: dict, query: str) -> bool:
+        title = product.get("title", "")
+        product_type = product.get("product_type", "")
+        tags = product.get("tags", [])
+
         query_words = {w.lower() for w in re.findall(r"[a-zA-Z]{3,}", query)}
         if not query_words:
             return True
+
         title_words = {w.lower() for w in re.findall(r"[a-zA-Z]{3,}", title)}
-        return bool(query_words & title_words)
+        type_words = {w.lower() for w in re.findall(r"[a-zA-Z]{3,}", product_type or "")}
+        tag_words = set()
+        for tag in tags:
+            tag_words.update({w.lower() for w in re.findall(r"[a-zA-Z]{3,}", tag)})
+
+        all_words = title_words | type_words | tag_words
+        return bool(query_words & all_words)
 
     async def search(self, query: str, top_k: int = 5) -> list[dict[str, Any]]:
         vector = embed_query(query)
@@ -96,7 +105,7 @@ class ProductRetriever:
                     "tags": meta.get("tags", []),
                 })
 
-        filtered = [p for p in product_list if self._title_matches_query(p.get("title"), query)]
+        filtered = [p for p in product_list if self._product_matches_query(p, query)]
         return filtered if filtered else product_list
 
 
