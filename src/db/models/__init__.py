@@ -8,8 +8,15 @@ from .products_details import (
     SyncStatus,
     VariantImageLink,
 )
+from .session_models import (
+    AgentStateSnapshot,
+    ChatMessage,
+    UserSession,
+)
 
 __all__ = [
+    "AgentStateSnapshot",
+    "ChatMessage",
     "Product",
     "ProductImage",
     "ProductOption",
@@ -17,5 +24,6 @@ __all__ = [
     "ProductVariant",
     "Store",
     "SyncStatus",
+    "UserSession",
     "VariantImageLink",
 ]

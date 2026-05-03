@@ -1,255 +1,218 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import Navbar from '../components/Navbar'
-import Footer from '../components/Footer'
 
-const FEATURED_PRODUCTS = [
-  {
-    id: 1,
-    title: 'Minimalist Chronos Watch',
-    image: 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=400&h=400&fit=crop',
-    price: 249.0,
-    vendor: 'Chronos Co.',
-  },
-  {
-    id: 2,
-    title: 'Velocity Runner Pro',
-    image: 'https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=400&h=400&fit=crop',
-    price: 185.0,
-    vendor: 'Velocity Sports',
-  },
-  {
-    id: 3,
-    title: 'Acoustic Pure Headset',
-    image: 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=400&h=400&fit=crop',
-    price: 320.0,
-    vendor: 'Acoustic Labs',
-  },
-  {
-    id: 4,
-    title: 'Classic Silhouette Shades',
-    image: 'https://images.unsplash.com/photo-1572635196237-14b3f281503f?w=400&h=400&fit=crop',
-    price: 145.0,
-    vendor: 'Silhouette Eyewear',
-  },
-]
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
 export default function LandingPage() {
   const [storeUrl, setStoreUrl] = useState('')
+  const [focusedInput, setFocusedInput] = useState(false)
+  const [isLoading, setIsLoading] = useState(false)
   const navigate = useNavigate()
 
-  const handleStart = () => {
+  const handleStart = async () => {
     const url = storeUrl.trim()
-    if (url) {
-      navigate('/chat', { state: { storeUrl: url } })
-    } else {
+    if (!url) {
       navigate('/chat')
+      return
+    }
+
+    setIsLoading(true)
+    try {
+      const res = await fetch(`${API_URL}/index`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ store: url }),
+      })
+      if (!res.ok) throw new Error('Failed to index store')
+      const data = await res.json()
+      navigate('/chat', { state: { storeUrl: url, storeDomain: data.store_domain, totalProducts: data.total_products_received } })
+    } catch (err) {
+      console.error('Index error:', err)
+      alert(`Error indexing store: ${err.message}`)
+      setIsLoading(false)
     }
   }
 
   return (
-    <div className="min-h-screen flex flex-col">
-      <Navbar />
+    <div className="w-full min-h-screen bg-gradient-to-br from-[#f9f9fa] via-[#f0f8f5] to-[#f9f9fa] flex flex-col items-center justify-center relative overflow-hidden">
+      <style>{`
+        @keyframes float-up {
+          0%, 100% { transform: translateY(0px); }
+          50% { transform: translateY(-20px); }
+        }
+        @keyframes fadeInScale {
+          from {
+            opacity: 0;
+            transform: scale(0.95);
+          }
+          to {
+            opacity: 1;
+            transform: scale(1);
+          }
+        }
+        .animate-float {
+          animation: float-up 6s ease-in-out infinite;
+        }
+        .animate-fadeInScale {
+          animation: fadeInScale 0.8s ease-out forwards;
+        }
+        .card-shadow {
+          box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.06);
+        }
+      `}</style>
 
-      <main className="flex-1">
-        {/* Hero Section */}
-        <section className="relative overflow-hidden pt-xl pb-xl px-margin">
-          <div className="max-w-container-max mx-auto text-center relative z-10">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-on-primary-container text-primary text-label-sm mb-md">
-              <span className="material-symbols-outlined text-[16px]" style={{ fontVariationSettings: "'FILL' 1" }}>
-                auto_awesome
+      <main className="w-full max-w-6xl px-8 flex flex-col items-center justify-center space-y-16 relative z-10">
+        {/* Brand Identity Component */}
+        <div className="flex flex-col items-center space-y-4 text-center animate-fadeInScale">
+          <div className="flex items-center gap-2 mb-3">
+            <div className="p-3 bg-primary-container rounded-xl shadow-lg hover:shadow-xl transition-shadow duration-300">
+              <span className="material-symbols-outlined text-on-primary text-3xl" style={{ fontVariationSettings: "'FILL' 1" }}>
+                shopping_basket
               </span>
-              Next-Gen Personal Shopping Assistant
             </div>
-            <h1 className="font-display text-display text-on-background mb-sm max-w-3xl mx-auto">
-              Find exactly what you need in any Shopify store
-            </h1>
-            <p className="font-body-lg text-body-lg text-secondary mb-lg max-w-2xl mx-auto">
-              Paste a store URL and let our AI assistant help you shop. From discovery to checkout, we curate the best products based on your personal style.
-            </p>
-            <div className="max-w-xl mx-auto bg-white p-sm rounded-xl border border-outline-variant shadow-lg flex items-center gap-sm">
-              <div className="flex-grow flex items-center gap-2 pl-2">
-                <span className="material-symbols-outlined text-outline">link</span>
-                <input
-                  type="text"
-                  value={storeUrl}
-                  onChange={(e) => setStoreUrl(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleStart()}
-                  placeholder="https://store-name.myshopify.com"
-                  className="w-full border-none focus:ring-0 font-body-md text-on-surface bg-transparent outline-none"
-                />
+            <span className="font-h3 text-h3 text-primary-container font-bold tracking-tight">
+              Shopify Assistant
+            </span>
+          </div>
+          <h1 className="font-display text-display text-on-surface max-w-3xl leading-tight font-bold">
+            Shopify Personal Shopping Agent
+          </h1>
+          <p className="font-body-lg text-body-lg text-secondary max-w-2xl leading-relaxed">
+            Paste a store URL to start your curated shopping experience.
+          </p>
+        </div>
+
+        {/* Input Section */}
+        <div className={`w-full max-w-2xl bg-surface-container-lowest p-8 rounded-2xl border-2 transition-all duration-300 card-shadow ${
+          focusedInput 
+            ? 'border-primary shadow-2xl shadow-primary/20' 
+            : 'border-neutral-200'
+        }`}>
+          <div className="flex flex-col space-y-6">
+            {/* URL Input */}
+            <div className="relative group">
+              <div className="absolute inset-y-0 left-0 flex items-center pl-4 pointer-events-none">
+                <span className={`material-symbols-outlined transition-colors duration-300 ${
+                  focusedInput ? 'text-primary' : 'text-outline'
+                }`}>
+                  link
+                </span>
               </div>
+              <input
+                value={storeUrl}
+                onChange={(e) => setStoreUrl(e.target.value)}
+                onFocus={() => setFocusedInput(true)}
+                onBlur={() => setFocusedInput(false)}
+                onKeyDown={(e) => e.key === 'Enter' && handleStart()}
+                className="w-full pl-14 pr-4 py-4 bg-white text-on-surface font-body-md rounded-xl border-2 border-outline-variant hover:border-primary/50 focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all outline-none"
+                placeholder="https://your-favorite-store.myshopify.com"
+                type="url"
+              />
+            </div>
+
+            {/* Action Row */}
+            <div className="flex flex-col md:flex-row items-center gap-6">
               <button
                 onClick={handleStart}
-                className="bg-primary-container text-on-primary font-label-md px-lg py-3 rounded-lg hover:bg-primary transition-colors flex items-center gap-2"
+                disabled={isLoading}
+                className="w-full md:w-auto px-8 py-4 bg-gradient-to-r from-primary-container to-primary-container/90 text-on-primary font-label-md rounded-xl hover:shadow-lg hover:shadow-primary/30 hover:scale-105 transition-all duration-200 active:scale-95 disabled:opacity-60 disabled:hover:scale-100 flex items-center justify-center gap-2 border-2 border-primary-fixed/30"
               >
-                Chat
-                <span className="material-symbols-outlined text-sm">send</span>
+                <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>
+                  chat_bubble
+                </span>
+                {isLoading ? 'Loading...' : 'Chat'}
               </button>
+
+              <div className="hidden md:block flex-1 border-t-2 border-outline-variant/30"></div>
+
+              <span className="text-label-sm font-label-sm text-secondary uppercase tracking-widest">
+                Ready to assist
+              </span>
             </div>
           </div>
-          <div className="absolute top-0 right-0 -z-10 translate-x-1/4 -translate-y-1/4 opacity-20">
-            <div className="w-[600px] h-[600px] rounded-full bg-gradient-to-br from-primary-fixed to-surface-bright blur-3xl"></div>
-          </div>
-        </section>
+        </div>
 
-        {/* Bento Features Section */}
-        <section className="py-xl px-margin bg-surface-container-low">
-          <div className="max-w-container-max mx-auto">
-            <div className="grid grid-cols-1 md:grid-cols-12 gap-gutter">
-              {/* Large Bento Card */}
-              <div className="md:col-span-8 bg-white rounded-xl p-lg border border-outline-variant relative overflow-hidden flex flex-col justify-between">
-                <div className="relative z-10 max-w-md">
-                  <h2 className="font-h2 text-h2 mb-sm">Smart Search Reimagined</h2>
-                  <p className="font-body-md text-body-md text-secondary">
-                    No more endless scrolling. Our AI indexes the entire catalog instantly to find that specific item you're looking for, even if you can't describe it perfectly.
-                  </p>
-                </div>
-                <div className="mt-lg">
-                  <img
-                    className="w-full h-64 object-cover rounded-lg border border-outline-variant"
-                    src="https://images.unsplash.com/photo-1441986300917-64674bd600d8?w=800&h=400&fit=crop"
-                    alt="Smart search interface"
-                  />
-                </div>
-              </div>
-
-              {/* Small Bento Card 1 */}
-              <div className="md:col-span-4 bg-primary text-on-primary rounded-xl p-lg flex flex-col justify-between border border-transparent shadow-md">
-                <div className="w-12 h-12 rounded-lg bg-primary-fixed text-on-primary-fixed flex items-center justify-center mb-md">
-                  <span className="material-symbols-outlined text-3xl">bolt</span>
-                </div>
-                <div>
-                  <h3 className="font-h3 text-h3 mb-xs">Instant Recommendations</h3>
-                  <p className="font-body-sm text-body-sm opacity-90">
-                    Get curated lists of products based on your browsing history and style preferences in seconds.
-                  </p>
-                </div>
-              </div>
-
-              {/* Small Bento Card 2 */}
-              <div className="md:col-span-4 bg-white rounded-xl p-lg border border-outline-variant flex flex-col justify-between">
-                <div className="w-12 h-12 rounded-lg bg-surface-container-highest text-secondary flex items-center justify-center mb-md">
-                  <span className="material-symbols-outlined text-3xl">person_search</span>
-                </div>
-                <div>
-                  <h3 className="font-h3 text-h3 mb-xs text-on-background">Personalized Experience</h3>
-                  <p className="font-body-sm text-body-sm text-secondary">
-                    Your shopper learns from your feedback, refining results to match your unique aesthetic over time.
-                  </p>
-                </div>
-              </div>
-
-              {/* Mid Bento Card */}
-              <div className="md:col-span-8 bg-[#F0F8F5] rounded-xl p-lg border border-primary/10 flex flex-col md:flex-row items-center gap-lg">
-                <div className="flex-grow">
-                  <h3 className="font-h3 text-h3 mb-xs text-primary">Chat with Any Store</h3>
-                  <p className="font-body-md text-body-md text-on-surface-variant">
-                    Whether it's high-fashion, electronics, or home decor, our assistant adapts to the brand's language and inventory effortlessly.
-                  </p>
-                </div>
-                <div className="shrink-0 flex -space-x-4">
-                  <div className="w-16 h-16 rounded-full border-4 border-white bg-surface-container-highest overflow-hidden">
-                    <img
-                      src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&h=100&fit=crop&crop=face"
-                      alt="Consultant"
-                      className="w-full h-full object-cover"
-                    />
-                  </div>
-                  <div className="w-16 h-16 rounded-full border-4 border-white bg-primary-container flex items-center justify-center text-on-primary text-2xl font-bold">
-                    AI
-                  </div>
-                </div>
-              </div>
+        {/* Secondary Visual Anchor (Features) */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full max-w-4xl opacity-90 mt-8">
+          <div className="bg-white rounded-2xl p-6 flex items-start gap-4 border-2 border-outline-variant/20 hover:border-primary/30 hover:shadow-lg transition-all duration-300 group cursor-pointer animate-fadeInScale" style={{ animationDelay: '100ms' }}>
+            <div className="p-3 bg-primary-fixed/10 rounded-lg group-hover:bg-primary-fixed/20 transition-colors">
+              <span className="material-symbols-outlined text-primary text-2xl">inventory_2</span>
+            </div>
+            <div>
+              <h4 className="font-label-md text-label-md text-on-surface font-bold">Inventory Search</h4>
+              <p className="font-body-sm text-body-sm text-secondary mt-1">Real-time stock across any Shopify store.</p>
             </div>
           </div>
-        </section>
 
-        {/* Social Proof */}
-        <section className="py-xl px-margin border-t border-outline-variant">
-          <div className="max-w-container-max mx-auto">
-            <p className="font-label-sm text-label-sm text-center text-outline mb-lg uppercase tracking-widest">
-              Trusted by power shoppers globally
-            </p>
-            <div className="flex flex-wrap justify-center items-center gap-xl opacity-40 grayscale">
-              <div className="font-display text-h1">VOGUE</div>
-              <div className="font-display text-h1">Hypebeast</div>
-              <div className="font-display text-h1">GQ</div>
-              <div className="font-display text-h1">Complex</div>
+          <div className="bg-white rounded-2xl p-6 flex items-start gap-4 border-2 border-outline-variant/20 hover:border-primary/30 hover:shadow-lg transition-all duration-300 group cursor-pointer animate-fadeInScale" style={{ animationDelay: '200ms' }}>
+            <div className="p-3 bg-primary-fixed/10 rounded-lg group-hover:bg-primary-fixed/20 transition-colors">
+              <span className="material-symbols-outlined text-primary text-2xl">auto_awesome</span>
+            </div>
+            <div>
+              <h4 className="font-label-md text-label-md text-on-surface font-bold">Curated Style</h4>
+              <p className="font-body-sm text-body-sm text-secondary mt-1">AI-driven recommendations based on preference.</p>
             </div>
           </div>
-        </section>
 
-        {/* Product Highlight Card Row */}
-        <section className="py-xl px-margin">
-          <div className="max-w-container-max mx-auto">
-            <div className="flex justify-between items-end mb-lg">
-              <div>
-                <h2 className="font-h2 text-h2 mb-xs">Featured Discoveries</h2>
-                <p className="font-body-md text-body-md text-secondary">
-                  Items found for users today across various Shopify merchants.
-                </p>
-              </div>
-              <button className="text-primary font-label-md flex items-center gap-1 hover:underline underline-offset-4">
-                View All Activity <span className="material-symbols-outlined text-sm">arrow_forward</span>
-              </button>
+          <div className="bg-white rounded-2xl p-6 flex items-start gap-4 border-2 border-outline-variant/20 hover:border-primary/30 hover:shadow-lg transition-all duration-300 group cursor-pointer animate-fadeInScale" style={{ animationDelay: '300ms' }}>
+            <div className="p-3 bg-primary-fixed/10 rounded-lg group-hover:bg-primary-fixed/20 transition-colors">
+              <span className="material-symbols-outlined text-primary text-2xl">verified</span>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-gutter">
-              {FEATURED_PRODUCTS.map((product) => (
-                <div
-                  key={product.id}
-                  className="group bg-white rounded-lg border border-outline-variant overflow-hidden flex flex-col"
-                >
-                  <div className="h-64 relative overflow-hidden border-b border-outline-variant">
-                    <img
-                      src={product.image}
-                      alt={product.title}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                    />
-                    <div className="absolute top-2 right-2">
-                      <button className="w-8 h-8 rounded-full bg-white/90 shadow-sm flex items-center justify-center text-secondary hover:text-primary transition-colors">
-                        <span className="material-symbols-outlined text-sm">favorite</span>
-                      </button>
-                    </div>
-                  </div>
-                  <div className="p-md flex-grow">
-                    <h3 className="font-h3 text-body-md mb-xs">{product.title}</h3>
-                    <div className="flex justify-between items-center">
-                      <span className="font-body-sm text-secondary">${product.price.toFixed(2)}</span>
-                      <button className="bg-surface-container-low p-2 rounded hover:bg-secondary-container transition-colors">
-                        <span className="material-symbols-outlined text-sm">add_shopping_cart</span>
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ))}
+            <div>
+              <h4 className="font-label-md text-label-md text-on-surface font-bold">Secure Checkout</h4>
+              <p className="font-body-sm text-body-sm text-secondary mt-1">Direct integration for seamless transactions.</p>
             </div>
           </div>
-        </section>
-
-        {/* Final CTA */}
-        <section className="py-xl px-margin bg-on-background text-inverse-on-surface text-center">
-          <div className="max-w-container-max mx-auto">
-            <h2 className="font-display text-display mb-sm">Ready to shop smarter?</h2>
-            <p className="font-body-lg text-body-lg opacity-70 mb-lg max-w-xl mx-auto">
-              Join thousands of users who let AI handle the searching while they enjoy the finding.
-            </p>
-            <div className="flex flex-col sm:flex-row justify-center gap-md">
-              <button
-                onClick={() => navigate('/chat')}
-                className="bg-primary-container text-on-primary px-lg py-4 rounded-lg font-label-md hover:bg-primary transition-transform active:scale-95"
-              >
-                Get Started Free
-              </button>
-              <button className="border border-outline text-white px-lg py-4 rounded-lg font-label-md hover:bg-white/10 transition-transform active:scale-95">
-                Book a Demo
-              </button>
-            </div>
-          </div>
-        </section>
+        </div>
       </main>
 
-      <Footer />
+      {/* Contextual Aesthetic Background Elements */}
+      <div className="fixed bottom-0 left-0 w-full h-80 overflow-hidden -z-0 opacity-40 pointer-events-none">
+        <div className="flex justify-between items-end h-full px-8 gap-6">
+          {/* Card 1 - Watch */}
+          <div className="w-64 h-80 bg-white rounded-t-3xl shadow-2xl transform translate-y-16 rotate-3 border-2 border-neutral-100 flex flex-col p-4 space-y-2 hover:translate-y-12 transition-transform duration-500 animate-float">
+            <div className="w-full h-40 bg-surface-container-high rounded-2xl overflow-hidden">
+              <img
+                className="w-full h-full object-cover grayscale opacity-60 hover:grayscale-0 hover:opacity-80 transition-all duration-500"
+                alt="Premium minimalist watch"
+                src="https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=400&h=400&fit=crop"
+              />
+            </div>
+            <div className="h-4 w-3/4 bg-surface-container-high rounded-lg"></div>
+            <div className="h-4 w-1/2 bg-surface-container-high rounded-lg"></div>
+          </div>
+
+          {/* Card 2 - Headphones */}
+          <div className="hidden lg:flex w-72 h-96 bg-white rounded-t-3xl shadow-2xl transform translate-y-8 -rotate-2 border-2 border-neutral-100 flex-col p-4 space-y-2 hover:translate-y-2 transition-transform duration-500 animate-float" style={{ animationDelay: '1s' }}>
+            <div className="w-full h-56 bg-surface-container-high rounded-2xl overflow-hidden">
+              <img
+                className="w-full h-full object-cover grayscale opacity-60 hover:grayscale-0 hover:opacity-80 transition-all duration-500"
+                alt="Modern high-fidelity headphones"
+                src="https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=400&h=400&fit=crop"
+              />
+            </div>
+            <div className="h-4 w-2/3 bg-surface-container-high rounded-lg"></div>
+            <div className="h-4 w-1/3 bg-surface-container-high rounded-lg"></div>
+          </div>
+
+          {/* Card 3 - Sneaker */}
+          <div className="w-60 h-72 bg-white rounded-t-3xl shadow-2xl transform translate-y-24 rotate-6 border-2 border-neutral-100 flex flex-col p-4 space-y-2 hover:translate-y-16 transition-transform duration-500 animate-float" style={{ animationDelay: '2s' }}>
+            <div className="w-full h-32 bg-surface-container-high rounded-2xl overflow-hidden">
+              <img
+                className="w-full h-full object-cover grayscale opacity-60 hover:grayscale-0 hover:opacity-80 transition-all duration-500"
+                alt="Vibrant red sports sneaker"
+                src="https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=400&h=400&fit=crop"
+              />
+            </div>
+            <div className="h-4 w-4/5 bg-surface-container-high rounded-lg"></div>
+            <div className="h-4 w-1/4 bg-surface-container-high rounded-lg"></div>
+          </div>
+        </div>
+      </div>
+
+      {/* Decorative gradient blur elements */}
+      <div className="fixed top-0 right-0 w-96 h-96 bg-primary-fixed/10 rounded-full blur-3xl -z-20 opacity-60"></div>
+      <div className="fixed bottom-0 left-0 w-96 h-96 bg-primary-container/5 rounded-full blur-3xl -z-20 opacity-60"></div>
     </div>
   )
 }

@@ -12,6 +12,11 @@ from src.api.services import StoreIngestionService, ProductIndexingService
 from src.config import settings
 from src.db.factory import DBType, DatabaseFactory
 from src.db.repositories.product_repository import ProductRepository
+from src.db.repositories.session_repository import (
+    AgentStateSnapshotRepository,
+    ChatMessageRepository,
+    UserSessionRepository,
+)
 from src.infrastructure.vectordb.enum import VectorDBEnums
 from src.infrastructure.vectordb.factory import VectorDBFactory
 from src.infrastructure.vectordb.providers.pgvector import PGVectorProvider
@@ -99,6 +104,13 @@ def on_startup() -> None:
 
 	# Initialize repositories
 	product_repository = ProductRepository(db_factory.session_factory)
+	user_session_repository = UserSessionRepository(db_factory.session_factory)
+	chat_message_repository = ChatMessageRepository(db_factory.session_factory)
+	agent_state_repository = AgentStateSnapshotRepository(db_factory.session_factory)
+
+	app.state.user_session_repository = user_session_repository
+	app.state.chat_message_repository = chat_message_repository
+	app.state.agent_state_repository = agent_state_repository
 
 	app.state.store_ingestion_service = StoreIngestionService(
 		product_repository,

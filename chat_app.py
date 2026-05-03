@@ -1,3 +1,4 @@
+import uuid
 import requests
 import streamlit as st
 
@@ -7,10 +8,43 @@ st.title("🛍️ Shopping Assistant")
 st.caption("Ask me about products, then follow up with details like sizes, colors, or prices.")
 
 API_URL = "http://localhost:8000/chat"
+SESSIONS_URL = "http://localhost:8000/chat/sessions"
+
+
+def get_or_create_user_id():
+    if "user_id" not in st.session_state:
+        st.session_state.user_id = str(uuid.uuid4())
+    return st.session_state.user_id
+
+
+def get_or_create_session_id():
+    if "session_id" not in st.session_state:
+        st.session_state.session_id = str(uuid.uuid4())
+        # Create session on backend
+        try:
+            requests.post(
+                SESSIONS_URL,
+                json={
+                    "user_id": get_or_create_user_id(),
+                    "session_id": st.session_state.session_id,
+                },
+                timeout=10,
+            )
+        except Exception:
+            pass
+    return st.session_state.session_id
 
 
 def ask_agent(message: str) -> str:
-    resp = requests.post(API_URL, json={"message": message}, timeout=60)
+    resp = requests.post(
+        API_URL,
+        json={
+            "message": message,
+            "user_id": get_or_create_user_id(),
+            "session_id": get_or_create_session_id(),
+        },
+        timeout=60,
+    )
     resp.raise_for_status()
     return resp.json()["response"]
 
