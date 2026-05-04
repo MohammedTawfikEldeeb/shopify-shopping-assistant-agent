@@ -22,7 +22,7 @@ class DatabaseFactory:
         self._init_repos()
 
     def _init_repos(self):
-        self.product_repository = ProductRepository(self.session_factory)
+        self.product_repository = ProductRepository(self.async_session_factory)
 
     def create_tables(self):
         _ = Product

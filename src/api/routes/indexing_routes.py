@@ -1,22 +1,24 @@
-import requests
-from fastapi import APIRouter, HTTPException, Request
+import httpx
+from fastapi import APIRouter, HTTPException, Depends
 from loguru import logger
 
 from src.api.schemas.indexing import IndexStoreRequest, IndexStoreResponse
 from src.api.services.store_ingestion_service import StoreIngestionService
 from src.api.services.indexing_service import ProductIndexingService
+from src.api.dependencies import get_store_ingestion_service, get_product_indexing_service
 
 router = APIRouter(tags=["indexing"])
 
 
 @router.post("/index", response_model=IndexStoreResponse)
-async def index_store(payload: IndexStoreRequest, request: Request) -> IndexStoreResponse:
-    ingestion_service: StoreIngestionService = request.app.state.store_ingestion_service
-    indexing_service: ProductIndexingService = request.app.state.product_indexing_service
-
+async def index_store(
+    payload: IndexStoreRequest,
+    ingestion_service: StoreIngestionService = Depends(get_store_ingestion_service),
+    indexing_service: ProductIndexingService = Depends(get_product_indexing_service),
+) -> IndexStoreResponse:
     logger.info("Received index request for store={}", payload.store)
     try:
-        result = ingestion_service.ingest_store_products(payload.store)
+        result = await ingestion_service.ingest_store_products(payload.store)
 
         products = result.pop("products", [])
         response = IndexStoreResponse(**result)
@@ -33,7 +35,7 @@ async def index_store(payload: IndexStoreRequest, request: Request) -> IndexStor
     except ValueError as exc:
         logger.warning("Invalid index request for store={}: {}", payload.store, exc)
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except requests.RequestException as exc:
+    except httpx.HTTPStatusError as exc:
         logger.error("Failed to fetch products for store={}: {}", payload.store, exc)
         raise HTTPException(status_code=502, detail="Failed to fetch products from Shopify") from exc
     except Exception as exc:

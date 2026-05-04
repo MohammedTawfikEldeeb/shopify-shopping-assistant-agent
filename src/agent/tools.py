@@ -3,19 +3,20 @@ import re
 from typing import Any
 
 from sqlalchemy import select, text
-from sqlalchemy.orm import sessionmaker, selectinload
+from sqlalchemy.ext.asyncio import async_sessionmaker
+from sqlalchemy.orm import selectinload
 
 from src.utils.embedding_service import embed_query
 from src.infrastructure.vectordb.providers.pgvector import PGVectorProvider
-from src.db.session import get_session
+from src.db.session import get_async_session
 from src.db.models import Product
 
 
 class ProductRetriever:
-    def __init__(self, vector_db: PGVectorProvider, sync_session_factory: sessionmaker):
+    def __init__(self, vector_db: PGVectorProvider, async_session_factory: async_sessionmaker):
         self.vector_db = vector_db
         self.collection_name = "product_vectors"
-        self.sync_session_factory = sync_session_factory
+        self.async_session_factory = async_session_factory
 
     @staticmethod
     def _product_matches_query(product: dict, query: str) -> bool:
@@ -55,9 +56,9 @@ class ProductRetriever:
         if not shopify_ids:
             return []
 
-        # Batch lookup all products in a single session with related data eager-loaded
-        with get_session(self.sync_session_factory) as session:
-            products = session.scalars(
+        # Batch lookup all products in a single async session with related data eager-loaded
+        async with get_async_session(self.async_session_factory) as session:
+            result = await session.scalars(
                 select(Product)
                 .where(Product.shopify_product_id.in_(shopify_ids))
                 .options(
@@ -65,7 +66,8 @@ class ProductRetriever:
                     selectinload(Product.variants),
                     selectinload(Product.images),
                 )
-            ).all()
+            )
+            products = result.all()
 
             product_list = []
             for product in products:
@@ -110,13 +112,13 @@ class ProductRetriever:
 
 
 class SQLQueryTool:
-    def __init__(self, sync_session_factory: sessionmaker):
-        self.session_factory = sync_session_factory
+    def __init__(self, async_session_factory: async_sessionmaker):
+        self.async_session_factory = async_session_factory
 
-    def execute(self, query: str, params: dict | None = None) -> list[dict[str, Any]]:
+    async def execute(self, query: str, params: dict | None = None) -> list[dict[str, Any]]:
         cleaned = query.strip()
         if not cleaned.lower().startswith("select"):
             raise ValueError("Only SELECT queries are allowed")
-        with get_session(self.session_factory) as session:
-            result = session.execute(text(query), params or {})
+        async with get_async_session(self.async_session_factory) as session:
+            result = await session.execute(text(query), params or {})
             return [dict(row) for row in result.mappings().all()]

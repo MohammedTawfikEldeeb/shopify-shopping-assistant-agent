@@ -5,10 +5,10 @@ from datetime import datetime
 from typing import Any, Optional
 
 from sqlalchemy import select, desc
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from ..models.session_models import UserSession, ChatMessage, AgentStateSnapshot
-from ..session import get_session
+from ..session import get_async_session
 
 
 def _session_to_dict(obj: UserSession) -> dict[str, Any]:
@@ -45,17 +45,17 @@ def _snapshot_to_dict(obj: AgentStateSnapshot) -> dict[str, Any]:
 
 
 class UserSessionRepository:
-    def __init__(self, session_factory: sessionmaker):
-        self.session_factory = session_factory
+    def __init__(self, async_session_factory: async_sessionmaker):
+        self.async_session_factory = async_session_factory
 
-    def create_session(
+    async def create_session(
         self,
         user_id: uuid.UUID,
         session_id: uuid.UUID,
         store_url: str | None = None,
         store_domain: str | None = None,
     ) -> dict[str, Any]:
-        with get_session(self.session_factory) as session:
+        async with get_async_session(self.async_session_factory) as session:
             obj = UserSession(
                 user_id=user_id,
                 session_id=session_id,
@@ -63,32 +63,33 @@ class UserSessionRepository:
                 store_domain=store_domain,
             )
             session.add(obj)
-            session.flush()
-            session.refresh(obj)
+            await session.flush()
+            await session.refresh(obj)
             return _session_to_dict(obj)
 
-    def get_by_session_id(self, session_id: uuid.UUID) -> Optional[dict[str, Any]]:
-        with get_session(self.session_factory) as session:
-            obj = session.scalar(select(UserSession).where(UserSession.session_id == session_id))
+    async def get_by_session_id(self, session_id: uuid.UUID) -> Optional[dict[str, Any]]:
+        async with get_async_session(self.async_session_factory) as session:
+            obj = await session.scalar(select(UserSession).where(UserSession.session_id == session_id))
             return _session_to_dict(obj) if obj else None
 
-    def list_by_user_id(self, user_id: uuid.UUID) -> list[dict[str, Any]]:
-        with get_session(self.session_factory) as session:
-            rows = session.scalars(
+    async def list_by_user_id(self, user_id: uuid.UUID) -> list[dict[str, Any]]:
+        async with get_async_session(self.async_session_factory) as session:
+            result = await session.scalars(
                 select(UserSession)
                 .where(UserSession.user_id == user_id)
                 .order_by(desc(UserSession.created_at))
-            ).all()
+            )
+            rows = result.all()
             return [_session_to_dict(r) for r in rows]
 
-    def update_store(
+    async def update_store(
         self,
         session_id: uuid.UUID,
         store_url: str | None,
         store_domain: str | None,
     ) -> Optional[dict[str, Any]]:
-        with get_session(self.session_factory) as session:
-            obj = session.scalar(select(UserSession).where(UserSession.session_id == session_id))
+        async with get_async_session(self.async_session_factory) as session:
+            obj = await session.scalar(select(UserSession).where(UserSession.session_id == session_id))
             if obj is None:
                 return None
             if store_url is not None:
@@ -96,31 +97,31 @@ class UserSessionRepository:
             if store_domain is not None:
                 obj.store_domain = store_domain
             obj.updated_at = datetime.now().astimezone()
-            session.flush()
-            session.refresh(obj)
+            await session.flush()
+            await session.refresh(obj)
             return _session_to_dict(obj)
 
-    def delete_session(self, session_id: uuid.UUID) -> bool:
-        with get_session(self.session_factory) as session:
-            obj = session.scalar(select(UserSession).where(UserSession.session_id == session_id))
+    async def delete_session(self, session_id: uuid.UUID) -> bool:
+        async with get_async_session(self.async_session_factory) as session:
+            obj = await session.scalar(select(UserSession).where(UserSession.session_id == session_id))
             if obj is None:
                 return False
-            session.delete(obj)
+            await session.delete(obj)
             return True
 
 
 class ChatMessageRepository:
-    def __init__(self, session_factory: sessionmaker):
-        self.session_factory = session_factory
+    def __init__(self, async_session_factory: async_sessionmaker):
+        self.async_session_factory = async_session_factory
 
-    def create_message(
+    async def create_message(
         self,
         session_id: uuid.UUID,
         role: str,
         content: str,
         products_json: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
-        with get_session(self.session_factory) as session:
+        async with get_async_session(self.async_session_factory) as session:
             obj = ChatMessage(
                 session_id=session_id,
                 role=role,
@@ -128,35 +129,36 @@ class ChatMessageRepository:
                 products_json=products_json,
             )
             session.add(obj)
-            session.flush()
-            session.refresh(obj)
+            await session.flush()
+            await session.refresh(obj)
             return _message_to_dict(obj)
 
-    def list_by_session_id(self, session_id: uuid.UUID) -> list[dict[str, Any]]:
-        with get_session(self.session_factory) as session:
-            rows = session.scalars(
+    async def list_by_session_id(self, session_id: uuid.UUID) -> list[dict[str, Any]]:
+        async with get_async_session(self.async_session_factory) as session:
+            result = await session.scalars(
                 select(ChatMessage)
                 .where(ChatMessage.session_id == session_id)
                 .order_by(ChatMessage.created_at)
-            ).all()
+            )
+            rows = result.all()
             return [_message_to_dict(r) for r in rows]
 
 
 class AgentStateSnapshotRepository:
-    def __init__(self, session_factory: sessionmaker):
-        self.session_factory = session_factory
+    def __init__(self, async_session_factory: async_sessionmaker):
+        self.async_session_factory = async_session_factory
 
-    def save_snapshot(self, session_id: uuid.UUID, state_json: dict[str, Any]) -> dict[str, Any]:
-        with get_session(self.session_factory) as session:
+    async def save_snapshot(self, session_id: uuid.UUID, state_json: dict[str, Any]) -> dict[str, Any]:
+        async with get_async_session(self.async_session_factory) as session:
             obj = AgentStateSnapshot(session_id=session_id, state_json=state_json)
             session.add(obj)
-            session.flush()
-            session.refresh(obj)
+            await session.flush()
+            await session.refresh(obj)
             return _snapshot_to_dict(obj)
 
-    def get_latest_by_session_id(self, session_id: uuid.UUID) -> Optional[dict[str, Any]]:
-        with get_session(self.session_factory) as session:
-            obj = session.scalar(
+    async def get_latest_by_session_id(self, session_id: uuid.UUID) -> Optional[dict[str, Any]]:
+        async with get_async_session(self.async_session_factory) as session:
+            obj = await session.scalar(
                 select(AgentStateSnapshot)
                 .where(AgentStateSnapshot.session_id == session_id)
                 .order_by(desc(AgentStateSnapshot.created_at))

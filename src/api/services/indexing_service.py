@@ -1,3 +1,4 @@
+import asyncio
 import re
 import uuid
 from html import unescape
@@ -12,7 +13,6 @@ from src.infrastructure.vectordb.enum import PgVectorDistanceMethodEnums
 _TAG_RE = re.compile(r"<[^>]+>")
 _WHITESPACE_RE = re.compile(r"\s+")
 
-# Fixed namespace for deterministic product UUIDs
 PRODUCT_UUID_NAMESPACE = uuid.UUID("6ba7b810-9dad-11d1-80b4-00c04fd430c8")
 
 
@@ -21,16 +21,16 @@ class ProductIndexingService:
         self.vector_db = vector_db
         self.collection_name = "product_vectors"
         self.logger = logger
+        self._connected = False
+        self._connect_lock = asyncio.Lock()
 
-        import asyncio
-        try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                loop.create_task(self.vector_db.connect())
-            else:
-                loop.run_until_complete(self.vector_db.connect())
-        except RuntimeError:
-            asyncio.run(self.vector_db.connect())
+    async def _ensure_connected(self):
+        if self._connected:
+            return
+        async with self._connect_lock:
+            if not self._connected:
+                await self.vector_db.connect()
+                self._connected = True
 
     def _product_uuid(self, shopify_product_id: int) -> str:
         """Generate a deterministic UUID for a product based on its Shopify ID."""
@@ -40,25 +40,20 @@ class ProductIndexingService:
         try:
             exists = await self.vector_db.is_collection_exists(self.collection_name)
             if do_reset and exists:
-                self.logger.warning(f"Dropping and recreating collection '{self.collection_name}'")
+                self.logger.warning("Dropping and recreating collection '{}'", self.collection_name)
                 await self.vector_db.delete_collection(self.collection_name)
                 exists = False
             if not exists:
-                self.logger.info(f"Creating collection '{self.collection_name}' with vector size {vector_size}")
+                self.logger.info("Creating collection '{}' with vector size {}", self.collection_name, vector_size)
                 await self.vector_db.create_collection(
                     collection_name=self.collection_name,
                     embedding_size=vector_size,
                     do_reset=False
                 )
             else:
-                self.logger.debug(f"Collection '{self.collection_name}' already exists")
-                await self.vector_db.create_collection(
-                    collection_name=self.collection_name,
-                    embedding_size=vector_size,
-                    do_reset=False
-                )
+                self.logger.debug("Collection '{}' already exists", self.collection_name)
         except Exception as e:
-            self.logger.error(f"Failed to ensure collection exists: {e}")
+            self.logger.error("Failed to ensure collection exists: {}", e)
             raise
 
     def _prepare_product_text(self, product: Dict[str, Any]) -> str:
@@ -145,15 +140,16 @@ class ProductIndexingService:
             return {
                 "total_products": 0,
                 "indexed_count": 0,
+                "skipped_count": 0,
                 "failed_count": 0,
                 "errors": []
             }
 
-        self.logger.info(f"Starting to index {len(products)} products")
+        self.logger.info("Starting to index {} products", len(products))
 
+        await self._ensure_connected()
         await self._ensure_collection_exists(vector_size=384, do_reset=False)
 
-        # Build UUID -> shopify_id mapping
         product_uuids = []
         for p in products:
             sid = p.get('id')
@@ -178,7 +174,7 @@ class ProductIndexingService:
 
                 text = self._prepare_product_text(product)
                 if not text:
-                    self.logger.warning(f"Product {i} has empty title and description, skipping")
+                    self.logger.warning("Product {} has empty title and description, skipping", i)
                     errors.append(f"Product {i}: Empty title and description")
                     continue
 
@@ -187,12 +183,12 @@ class ProductIndexingService:
                 record_ids.append(product_uuid if product_uuid is not None else str(uuid.uuid4()))
 
             except Exception as e:
-                self.logger.error(f"Error preparing product {i} for indexing: {e}")
+                self.logger.error("Error preparing product {} for indexing: {}", i, e)
                 errors.append(f"Product {i}: {str(e)}")
                 continue
 
         if not texts:
-            self.logger.info(f"All {len(products)} products already indexed, nothing to do")
+            self.logger.info("All {} products already indexed, nothing to do", len(products))
             return {
                 "total_products": len(products),
                 "indexed_count": 0,
@@ -202,10 +198,10 @@ class ProductIndexingService:
             }
 
         try:
-            self.logger.info(f"Generating embeddings for {len(texts)} new products")
-            embeddings = embed_batch(texts)
+            self.logger.info("Generating embeddings for {} new products", len(texts))
+            embeddings = await asyncio.to_thread(embed_batch, texts)
 
-            self.logger.info(f"Inserting {len(embeddings)} embedded products into vector database")
+            self.logger.info("Inserting {} embedded products into vector database", len(embeddings))
             success = await self.vector_db.insert_many(
                 collection_name=self.collection_name,
                 texts=texts,
@@ -216,7 +212,7 @@ class ProductIndexingService:
             )
 
             if success:
-                self.logger.info(f"Successfully indexed {len(texts)} products")
+                self.logger.info("Successfully indexed {} products", len(texts))
                 return {
                     "total_products": len(products),
                     "indexed_count": len(texts),
@@ -235,7 +231,7 @@ class ProductIndexingService:
                 }
 
         except Exception as e:
-            self.logger.error(f"Error during product indexing: {e}")
+            self.logger.error("Error during product indexing: {}", e)
             return {
                 "total_products": len(products),
                 "indexed_count": 0,

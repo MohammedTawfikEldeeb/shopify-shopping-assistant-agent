@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlparse
 
-import requests
+import httpx
 from loguru import logger as default_logger
 
 from src.db.repositories.product_repository import ProductRepository
@@ -21,15 +21,17 @@ class StoreIngestionService:
     def __init__(
         self,
         product_repository: ProductRepository,
+        http_client: httpx.AsyncClient,
         *,
         logger=default_logger,
         timeout_seconds: int = 30,
     ) -> None:
         self._product_repository = product_repository
+        self._http_client = http_client
         self._logger = logger
         self._timeout_seconds = timeout_seconds
 
-    def ingest_store_products(self, store_input: str) -> dict[str, Any]:
+    async def ingest_store_products(self, store_input: str) -> dict[str, Any]:
         normalized_store = self._normalize_store_input(store_input)
         self._logger.info(
             "Starting store ingestion for domain={} from {}",
@@ -37,23 +39,23 @@ class StoreIngestionService:
             normalized_store.products_url,
         )
 
-        products = self._fetch_products(normalized_store.products_url)
+        products = await self._fetch_products(normalized_store.products_url)
         ingested_count = 0
         failed_count = 0
 
         # Get or create store
-        store_id = self._product_repository.get_store_id_by_domain(normalized_store.domain)
+        store_id = await self._product_repository.get_store_id_by_domain(normalized_store.domain)
         if not store_id:
-            self._logger.info(f"Store not found for domain {normalized_store.domain}, creating new store")
-            store_id = self._product_repository.upsert_store_and_get_id(
+            self._logger.info("Store not found for domain {}, creating new store", normalized_store.domain)
+            store_id = await self._product_repository.upsert_store_and_get_id(
                 domain_or_url=normalized_store.base_url,
                 shop_name=normalized_store.domain,
             )
-            self._logger.info(f"Created new store with ID={store_id} for domain={normalized_store.domain}")
+            self._logger.info("Created new store with ID={} for domain={}", store_id, normalized_store.domain)
 
         for product_payload in products:
             try:
-                self._product_repository.upsert_product_from_shopify(
+                await self._product_repository.upsert_product_from_shopify(
                     normalized_store.base_url,
                     product_payload,
                 )
@@ -85,9 +87,9 @@ class StoreIngestionService:
             "products": products,
         }
 
-    def _fetch_products(self, products_url: str) -> list[dict[str, Any]]:
+    async def _fetch_products(self, products_url: str) -> list[dict[str, Any]]:
         self._logger.info("Fetching Shopify products from {}", products_url)
-        response = requests.get(products_url, timeout=self._timeout_seconds)
+        response = await self._http_client.get(products_url, timeout=self._timeout_seconds)
         response.raise_for_status()
 
         payload = response.json()

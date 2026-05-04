@@ -4,7 +4,7 @@ from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 
 
-# Sync
+# Sync (kept for Alembic migrations and the test.py utility only)
 _sync_engine = None
 _sync_session_factory = None
 
@@ -45,6 +45,7 @@ def get_async_session_factory(url: str, **kwargs):
 
 @contextmanager
 def get_session(session_factory) -> Session:
+    """Sync context manager — kept only for Alembic / offline scripts."""
     session = session_factory()
     try:
         yield session
@@ -58,6 +59,7 @@ def get_session(session_factory) -> Session:
 
 @asynccontextmanager
 async def get_async_session(session_factory):
+    """Async context manager used by all runtime code."""
     session = session_factory()
     try:
         yield session

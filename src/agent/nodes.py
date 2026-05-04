@@ -188,7 +188,7 @@ async def tools_node(
                 content = "No products in memory. Search for a product first."
             else:
                 try:
-                    rows = sql_tool.execute(args.get("query", ""))
+                    rows = await sql_tool.execute(args.get("query", ""))
                     content = _format_sql_results_plain(rows)
                 except Exception as e:
                     content = f"SQL error: {e}"

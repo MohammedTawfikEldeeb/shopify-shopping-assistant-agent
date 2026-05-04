@@ -9,7 +9,7 @@ from typing import Any, Optional
 from urllib.parse import urlparse
 
 from sqlalchemy import delete, select
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from ..interfaces.base_repository import BaseRepository
 from ..models import (
@@ -22,7 +22,7 @@ from ..models import (
     SyncStatus,
     VariantImageLink,
 )
-from ..session import get_session
+from ..session import get_async_session
 
 
 TAG_RE = re.compile(r"<[^>]+>")
@@ -30,50 +30,51 @@ WHITESPACE_RE = re.compile(r"\s+")
 
 
 class ProductRepository(BaseRepository[Product]):
-    def __init__(self, session_factory: sessionmaker):
-        self.session_factory = session_factory
+    def __init__(self, async_session_factory: async_sessionmaker):
+        self.async_session_factory = async_session_factory
 
-    def get_by_id(self, id: uuid.UUID) -> Optional[Product]:
-        with get_session(self.session_factory) as session:
-            return session.get(Product, id)
+    async def get_by_id(self, id: uuid.UUID) -> Optional[Product]:
+        async with get_async_session(self.async_session_factory) as session:
+            return await session.get(Product, id)
 
-    def get_all(self) -> list[Product]:
-        with get_session(self.session_factory) as session:
-            return list(session.scalars(select(Product)).all())
+    async def get_all(self) -> list[Product]:
+        async with get_async_session(self.async_session_factory) as session:
+            result = await session.scalars(select(Product))
+            return list(result.all())
 
-    def create(self, obj: Product) -> Product:
-        with get_session(self.session_factory) as session:
+    async def create(self, obj: Product) -> Product:
+        async with get_async_session(self.async_session_factory) as session:
             session.add(obj)
-            session.flush()
-            session.refresh(obj)
+            await session.flush()
+            await session.refresh(obj)
             return obj
 
-    def update(self, obj: Product) -> Product:
-        with get_session(self.session_factory) as session:
-            merged = session.merge(obj)
-            session.flush()
-            session.refresh(merged)
+    async def update(self, obj: Product) -> Product:
+        async with get_async_session(self.async_session_factory) as session:
+            merged = await session.merge(obj)
+            await session.flush()
+            await session.refresh(merged)
             return merged
 
-    def delete(self, id: uuid.UUID) -> bool:
-        with get_session(self.session_factory) as session:
-            product = session.get(Product, id)
+    async def delete(self, id: uuid.UUID) -> bool:
+        async with get_async_session(self.async_session_factory) as session:
+            product = await session.get(Product, id)
             if product is None:
                 return False
-            session.delete(product)
+            await session.delete(product)
             return True
 
-    def get_store_by_domain(self, domain: str) -> Optional[Store]:
-        with get_session(self.session_factory) as session:
-            return session.scalar(select(Store).where(Store.domain == self._normalize_domain(domain)))
+    async def get_store_by_domain(self, domain: str) -> Optional[Store]:
+        async with get_async_session(self.async_session_factory) as session:
+            return await session.scalar(select(Store).where(Store.domain == self._normalize_domain(domain)))
 
-    def get_store_id_by_domain(self, domain: str) -> Optional[uuid.UUID]:
+    async def get_store_id_by_domain(self, domain: str) -> Optional[uuid.UUID]:
         """Get store ID by domain (returns just the ID to avoid detached instance issues)"""
-        with get_session(self.session_factory) as session:
-            store = session.scalar(select(Store).where(Store.domain == self._normalize_domain(domain)))
+        async with get_async_session(self.async_session_factory) as session:
+            store = await session.scalar(select(Store).where(Store.domain == self._normalize_domain(domain)))
             return store.id if store else None
 
-    def upsert_store_and_get_id(
+    async def upsert_store_and_get_id(
         self,
         domain_or_url: str,
         *,
@@ -82,19 +83,19 @@ class ProductRepository(BaseRepository[Product]):
         raw_metadata: dict[str, Any] | None = None,
     ) -> uuid.UUID:
         """Upsert store and return just the ID to avoid detached instance issues"""
-        with get_session(self.session_factory) as session:
-            store = self._upsert_store_in_session(
+        async with get_async_session(self.async_session_factory) as session:
+            store = await self._upsert_store_in_session(
                 session,
                 domain_or_url=domain_or_url,
                 shop_name=shop_name,
                 currency_code=currency_code,
                 raw_metadata=raw_metadata,
             )
-            session.flush()
+            await session.flush()
             store_id = store.id
             return store_id
 
-    def upsert_store(
+    async def upsert_store(
         self,
         domain_or_url: str,
         *,
@@ -102,30 +103,30 @@ class ProductRepository(BaseRepository[Product]):
         currency_code: str | None = None,
         raw_metadata: dict[str, Any] | None = None,
     ) -> Store:
-        with get_session(self.session_factory) as session:
-            store = self._upsert_store_in_session(
+        async with get_async_session(self.async_session_factory) as session:
+            store = await self._upsert_store_in_session(
                 session,
                 domain_or_url=domain_or_url,
                 shop_name=shop_name,
                 currency_code=currency_code,
                 raw_metadata=raw_metadata,
             )
-            session.flush()
-            session.refresh(store)
+            await session.flush()
+            await session.refresh(store)
             return store
 
-    def upsert_product_from_shopify(self, store_url: str, payload: dict[str, Any]) -> Product:
-        with get_session(self.session_factory) as session:
-            store = self._upsert_store_in_session(session, domain_or_url=store_url)
-            product = self._upsert_product_in_session(session, store=store, payload=payload)
+    async def upsert_product_from_shopify(self, store_url: str, payload: dict[str, Any]) -> Product:
+        async with get_async_session(self.async_session_factory) as session:
+            store = await self._upsert_store_in_session(session, domain_or_url=store_url)
+            product = await self._upsert_product_in_session(session, store=store, payload=payload)
             store.last_synced_at = datetime.now().astimezone()
-            session.flush()
-            session.refresh(product)
+            await session.flush()
+            await session.refresh(product)
             return product
 
-    def _upsert_store_in_session(
+    async def _upsert_store_in_session(
         self,
-        session: Session,
+        session: AsyncSession,
         *,
         domain_or_url: str,
         shop_name: str | None = None,
@@ -134,7 +135,7 @@ class ProductRepository(BaseRepository[Product]):
     ) -> Store:
         domain = self._normalize_domain(domain_or_url)
         base_url = self._normalize_base_url(domain_or_url)
-        store = session.scalar(select(Store).where(Store.domain == domain))
+        store = await session.scalar(select(Store).where(Store.domain == domain))
 
         if store is None:
             store = Store(domain=domain, base_url=base_url)
@@ -149,9 +150,9 @@ class ProductRepository(BaseRepository[Product]):
             store.raw_metadata = raw_metadata
         return store
 
-    def _upsert_product_in_session(self, session: Session, *, store: Store, payload: dict[str, Any]) -> Product:
+    async def _upsert_product_in_session(self, session: AsyncSession, *, store: Store, payload: dict[str, Any]) -> Product:
         shopify_product_id = int(payload["id"])
-        product = session.scalar(
+        product = await session.scalar(
             select(Product).where(
                 Product.store_id == store.id,
                 Product.shopify_product_id == shopify_product_id,
@@ -174,17 +175,17 @@ class ProductRepository(BaseRepository[Product]):
         product.sync_status = SyncStatus.SYNCED
         product.raw_payload = payload
 
-        session.flush()
+        await session.flush()
 
-        self._replace_options(session, product, payload.get("options", []))
-        image_map = self._replace_images(session, product, payload.get("images", []))
-        self._replace_variants(session, product, payload.get("variants", []), image_map=image_map)
+        await self._replace_options(session, product, payload.get("options", []))
+        image_map = await self._replace_images(session, product, payload.get("images", []))
+        await self._replace_variants(session, product, payload.get("variants", []), image_map=image_map)
 
         return product
 
-    def _replace_options(self, session: Session, product: Product, options: list[dict[str, Any]]) -> None:
-        session.execute(delete(ProductOptionValue).where(ProductOptionValue.option_id.in_(select(ProductOption.id).where(ProductOption.product_id == product.id))))
-        session.execute(delete(ProductOption).where(ProductOption.product_id == product.id))
+    async def _replace_options(self, session: AsyncSession, product: Product, options: list[dict[str, Any]]) -> None:
+        await session.execute(delete(ProductOptionValue).where(ProductOptionValue.option_id.in_(select(ProductOption.id).where(ProductOption.product_id == product.id))))
+        await session.execute(delete(ProductOption).where(ProductOption.product_id == product.id))
 
         for option_payload in options:
             option = ProductOption(
@@ -193,15 +194,15 @@ class ProductRepository(BaseRepository[Product]):
                 position=option_payload.get("position"),
             )
             session.add(option)
-            session.flush()
+            await session.flush()
             for index, value in enumerate(option_payload.get("values", []), start=1):
                 session.add(ProductOptionValue(option=option, value=str(value), position=index))
 
-    def _replace_images(
-        self, session: Session, product: Product, images: list[dict[str, Any]]
+    async def _replace_images(
+        self, session: AsyncSession, product: Product, images: list[dict[str, Any]]
     ) -> dict[int, ProductImage]:
-        session.execute(delete(VariantImageLink).where(VariantImageLink.image_id.in_(select(ProductImage.id).where(ProductImage.product_id == product.id))))
-        session.execute(delete(ProductImage).where(ProductImage.product_id == product.id))
+        await session.execute(delete(VariantImageLink).where(VariantImageLink.image_id.in_(select(ProductImage.id).where(ProductImage.product_id == product.id))))
+        await session.execute(delete(ProductImage).where(ProductImage.product_id == product.id))
 
         image_map: dict[int, ProductImage] = {}
         for image_payload in images:
@@ -218,20 +219,20 @@ class ProductRepository(BaseRepository[Product]):
                 raw_payload=image_payload,
             )
             session.add(image)
-            session.flush()
+            await session.flush()
             image_map[image.shopify_image_id] = image
         return image_map
 
-    def _replace_variants(
+    async def _replace_variants(
         self,
-        session: Session,
+        session: AsyncSession,
         product: Product,
         variants: list[dict[str, Any]],
         *,
         image_map: dict[int, ProductImage],
     ) -> None:
-        session.execute(delete(VariantImageLink).where(VariantImageLink.variant_id.in_(select(ProductVariant.id).where(ProductVariant.product_id == product.id))))
-        session.execute(delete(ProductVariant).where(ProductVariant.product_id == product.id))
+        await session.execute(delete(VariantImageLink).where(VariantImageLink.variant_id.in_(select(ProductVariant.id).where(ProductVariant.product_id == product.id))))
+        await session.execute(delete(ProductVariant).where(ProductVariant.product_id == product.id))
 
         for variant_payload in variants:
             variant = ProductVariant(
@@ -254,7 +255,7 @@ class ProductRepository(BaseRepository[Product]):
                 raw_payload=variant_payload,
             )
             session.add(variant)
-            session.flush()
+            await session.flush()
 
             featured_image = variant_payload.get("featured_image") or {}
             featured_image_id = featured_image.get("id")
