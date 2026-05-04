@@ -52,6 +52,11 @@ class OpikSettings(BaseModel):
     api_key: str = Field(default="", description="Opik API Key")
     project_name: str = Field(default="shopify-shopping-assistant-agent", description="Opik Project Name")
 
+class SemanticCacheSettings(BaseModel):
+    enabled: bool = Field(default=True, description="Enable or disable semantic caching")
+    similarity_threshold: float = Field(default=0.92, description="Minimum cosine similarity for cache hit")
+    ttl_seconds: int = Field(default=86400, description="Cache entry time-to-live in seconds")
+
 class Settings(BaseSettings):
     vector_db_provider: str = Field(default="PGVECTOR")
     postgres: PostgresSettings = PostgresSettings()
@@ -61,6 +66,7 @@ class Settings(BaseSettings):
     groq_api: GroqAPISettings = GroqAPISettings()
     openrouter_api: OpenRouterAPISettings = OpenRouterAPISettings()
     opik: OpikSettings = OpikSettings()
+    semantic_cache: SemanticCacheSettings = SemanticCacheSettings()
 
     model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(
         env_file=[".env"],

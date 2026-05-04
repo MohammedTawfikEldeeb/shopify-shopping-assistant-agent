@@ -11,6 +11,7 @@ from src.agent import ShoppingAgent
 from src.agent.tools import ProductRetriever, SQLQueryTool
 from src.api.routes import chat_router, indexing_router, system_router
 from src.api.services import StoreIngestionService, ProductIndexingService
+from src.api.services.semantic_cache_service import SemanticCacheService
 from src.config import settings
 from src.db.factory import DBType, DatabaseFactory
 from src.db.repositories.product_repository import ProductRepository
@@ -87,6 +88,23 @@ async def lifespan(app: FastAPI):
 
 	# Register PGVector provider in factory so any later code gets the SAME instance
 	vector_db_factory.register(VectorDBEnums.PGVector, shared_vector_db)
+
+	# Initialize semantic cache (optional, controlled by config)
+	semantic_cache_service = None
+	if settings.semantic_cache.enabled:
+		semantic_cache_service = SemanticCacheService(
+			vector_db=shared_vector_db,
+			similarity_threshold=settings.semantic_cache.similarity_threshold,
+			ttl_seconds=settings.semantic_cache.ttl_seconds,
+		)
+		logger.info(
+			"Semantic caching enabled (threshold={}, ttl={}s)",
+			settings.semantic_cache.similarity_threshold,
+			settings.semantic_cache.ttl_seconds,
+		)
+	else:
+		logger.info("Semantic caching disabled by configuration")
+	app.state.semantic_cache_service = semantic_cache_service
 
 	# Initialize repositories — all use async session factory
 	product_repository = ProductRepository(db_factory.async_session_factory)

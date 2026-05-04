@@ -1,6 +1,7 @@
 from fastapi import Request
 
 from src.agent import ShoppingAgent
+from src.api.services.semantic_cache_service import SemanticCacheService
 from src.api.services.store_ingestion_service import StoreIngestionService
 from src.api.services.indexing_service import ProductIndexingService
 from src.db.repositories.product_repository import ProductRepository
@@ -37,3 +38,7 @@ def get_agent_state_repository(request: Request) -> AgentStateSnapshotRepository
 
 def get_shopping_agent(request: Request) -> ShoppingAgent:
     return request.app.state.shopping_agent
+
+
+def get_semantic_cache_service(request: Request) -> SemanticCacheService | None:
+    return getattr(request.app.state, "semantic_cache_service", None)

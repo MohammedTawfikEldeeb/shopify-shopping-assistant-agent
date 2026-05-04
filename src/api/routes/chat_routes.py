@@ -3,16 +3,19 @@ import uuid
 
 import opik
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Depends
+from loguru import logger
 from langchain_core.messages import HumanMessage, AIMessage
 
 from src.agent import ShoppingAgent
 from src.api.schemas.chat import ChatRequest, ChatResponse, CreateSessionRequest, SessionResponse, ChatMessageResponse
+from src.api.services.semantic_cache_service import SemanticCacheService
 from src.db.repositories.session_repository import UserSessionRepository, ChatMessageRepository, AgentStateSnapshotRepository
 from src.api.dependencies import (
     get_user_session_repository,
     get_chat_message_repository,
     get_agent_state_repository,
     get_shopping_agent,
+    get_semantic_cache_service,
 )
 
 router = APIRouter(prefix="/chat", tags=["chat"])
@@ -72,6 +75,7 @@ async def chat(
     chat_repo: ChatMessageRepository = Depends(get_chat_message_repository),
     state_repo: AgentStateSnapshotRepository = Depends(get_agent_state_repository),
     agent: ShoppingAgent = Depends(get_shopping_agent),
+    cache_service: SemanticCacheService | None = Depends(get_semantic_cache_service),
 ) -> ChatResponse:
     session = await session_repo.get_by_session_id(body.session_id)
     if session is None:
@@ -80,30 +84,51 @@ async def chat(
             session_id=body.session_id,
         )
 
-    await chat_repo.create_message(
-        session_id=body.session_id,
-        role="user",
-        content=body.message,
-    )
+    store_domain = getattr(session, "store_domain", None) or ""
 
-    latest_snapshot = await state_repo.get_latest_by_session_id(body.session_id)
-    agent_state = None
-    if latest_snapshot:
-        agent_state = latest_snapshot.get("state_json")
+    cached = None
+    if cache_service is not None:
+        try:
+            cache_domain = store_domain or ""
+            cached = await cache_service.lookup(body.message, cache_domain)
+        except Exception:
+            logger.opt(exception=True).warning("Semantic cache lookup failed, proceeding without cache")
 
-    response_text, products, new_state = await agent.chat_with_session(
-        user_message=body.message,
-        session_state=agent_state,
-    )
+    if cached:
+        logger.info("Returning cached response for store_domain='{}'", cache_domain)
+        response_text = cached.response
+        products = cached.products
+    else:
+        await chat_repo.create_message(
+            session_id=body.session_id,
+            role="user",
+            content=body.message,
+        )
 
-    await state_repo.save_snapshot(session_id=body.session_id, state_json=new_state)
+        latest_snapshot = await state_repo.get_latest_by_session_id(body.session_id)
+        agent_state = None
+        if latest_snapshot:
+            agent_state = latest_snapshot.get("state_json")
 
-    await chat_repo.create_message(
-        session_id=body.session_id,
-        role="assistant",
-        content=response_text,
-        products_json=products or None,
-    )
+        response_text, products, new_state = await agent.chat_with_session(
+            user_message=body.message,
+            session_state=agent_state,
+        )
+
+        await state_repo.save_snapshot(session_id=body.session_id, state_json=new_state)
+
+        await chat_repo.create_message(
+            session_id=body.session_id,
+            role="assistant",
+            content=response_text,
+            products_json=products or None,
+        )
+
+        if cache_service is not None:
+            try:
+                await cache_service.store(body.message, response_text, products or [], cache_domain)
+            except Exception:
+                logger.opt(exception=True).warning("Failed to store response in semantic cache")
 
     background_tasks.add_task(opik.flush_tracker)
     return ChatResponse(response=response_text, products=products or [])
