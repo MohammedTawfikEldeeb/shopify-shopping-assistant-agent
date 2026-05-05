@@ -1,3 +1,4 @@
+import asyncio
 import json
 import re
 from typing import Any
@@ -37,17 +38,19 @@ class ProductRetriever:
         all_words = title_words | type_words | tag_words
         return bool(query_words & all_words)
 
-    async def search(self, query: str, top_k: int = 5) -> list[dict[str, Any]]:
-        vector = embed_query(query)
+    async def search(self, query: str, top_k: int = 10) -> list[dict[str, Any]]:
+        vector = await asyncio.to_thread(embed_query, query)
+
         results = await self.vector_db.query(self.collection_name, vector, top_k)
         if not results:
             return []
 
-        # Collect all shopify_ids and metadata from vector DB
         shopify_ids = []
         meta_map = {}
         for r in results:
             meta = r.get("payload", {}).get("metadata", {})
+            if not isinstance(meta, dict):
+                meta = json.loads(meta) if isinstance(meta, str) else {}
             shopify_id = meta.get("shopify_product_id")
             if shopify_id:
                 shopify_ids.append(int(shopify_id))
@@ -56,7 +59,6 @@ class ProductRetriever:
         if not shopify_ids:
             return []
 
-        # Batch lookup all products in a single async session with related data eager-loaded
         async with get_async_session(self.async_session_factory) as session:
             result = await session.scalars(
                 select(Product)
@@ -73,19 +75,16 @@ class ProductRetriever:
             for product in products:
                 meta = meta_map.get(product.shopify_product_id, {})
 
-                # Build product URL
                 store_base_url = product.store.base_url if product.store else None
                 handle = product.handle or meta.get("handle", "")
                 link = f"{store_base_url}/products/{handle}" if store_base_url and handle else None
 
-                # Get price: prefer metadata min price, fallback to SQL variants
                 price = meta.get("price")
                 if (price is None or price == 0) and product.variants:
                     prices = [v.price for v in product.variants if v.price is not None]
                     if prices:
                         price = float(min(prices))
 
-                # Get image: prefer metadata primary image, fallback to first SQL image
                 image = meta.get("primary_image_url")
                 if not image and product.images:
                     image = product.images[0].src

@@ -177,8 +177,13 @@ async def tools_node(
         if name == "product_retriever":
             query = args.get("query", "")
             found_products = await retriever.search(query)
-            products = found_products
-            product_ids = [p["id"] for p in found_products]
+
+            # Only update product state when we actually found relevant products.
+            # If the search returned nothing (e.g. "laptops" in a clothing store),
+            # keep the previously found products intact.
+            if found_products:
+                products = found_products
+                product_ids = [p["id"] for p in found_products]
 
             content = _format_products_plain(found_products)
             results.append(ToolMessage(content=content, tool_call_id=call_id))

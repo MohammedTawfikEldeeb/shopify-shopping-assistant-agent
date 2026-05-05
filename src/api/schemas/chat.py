@@ -8,6 +8,7 @@ class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1, description="User message")
     user_id: UUID = Field(..., description="User UUID")
     session_id: UUID = Field(..., description="Session UUID")
+    store_domain: str | None = Field(default=None, description="Store domain to scope product results")
 
 
 class ProductCard(BaseModel):

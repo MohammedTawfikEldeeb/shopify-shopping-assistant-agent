@@ -51,7 +51,7 @@ SQL Reference:
 - Product options: SELECT po.name, pov.value FROM product_options po JOIN product_option_values pov ON po.id = pov.option_id WHERE po.product_id = 'UUID'
 - All variants: SELECT title, sku, option1, option2, option3, price, available FROM product_variants WHERE product_id = 'UUID'
 - Specific variant: SELECT title, price, option1, option2, option3 FROM product_variants WHERE product_id = 'UUID' AND ('White' IN (option1, option2, option3))
-- Filter by keyword: SELECT id, title, product_type FROM products WHERE store_id = '<store_id>' AND (title ILIKE '%knit%' AND title ILIKE '%shirt%')
+- Filter by keyword: SELECT id, title, product_type FROM products WHERE title ILIKE '%knit%' AND title ILIKE '%shirt%'
 """,
 )
 

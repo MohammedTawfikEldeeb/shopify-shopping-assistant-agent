@@ -186,6 +186,7 @@ class ProductRepository(BaseRepository[Product]):
     async def _replace_options(self, session: AsyncSession, product: Product, options: list[dict[str, Any]]) -> None:
         await session.execute(delete(ProductOptionValue).where(ProductOptionValue.option_id.in_(select(ProductOption.id).where(ProductOption.product_id == product.id))))
         await session.execute(delete(ProductOption).where(ProductOption.product_id == product.id))
+        await session.flush()
 
         for option_payload in options:
             option = ProductOption(
@@ -197,6 +198,8 @@ class ProductRepository(BaseRepository[Product]):
             await session.flush()
             for index, value in enumerate(option_payload.get("values", []), start=1):
                 session.add(ProductOptionValue(option=option, value=str(value), position=index))
+
+        await session.flush()
 
     async def _replace_images(
         self, session: AsyncSession, product: Product, images: list[dict[str, Any]]

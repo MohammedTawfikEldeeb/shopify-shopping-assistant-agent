@@ -42,12 +42,17 @@ class SemanticCacheService:
         self.ttl_seconds = ttl_seconds
         self.logger = logger
         self._connected = False
-        self._connect_lock = asyncio.Lock()
+        self._connect_lock: asyncio.Lock | None = None
+
+    def _get_connect_lock(self) -> asyncio.Lock:
+        if self._connect_lock is None:
+            self._connect_lock = asyncio.Lock()
+        return self._connect_lock
 
     async def _ensure_connected(self):
         if self._connected:
             return
-        async with self._connect_lock:
+        async with self._get_connect_lock():
             if not self._connected:
                 await self.vector_db.connect()
                 self._connected = True

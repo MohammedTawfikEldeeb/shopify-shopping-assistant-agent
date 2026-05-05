@@ -82,20 +82,19 @@ async def chat(
         session = await session_repo.create_session(
             user_id=body.user_id,
             session_id=body.session_id,
+            store_domain=body.store_domain,
         )
-
-    store_domain = getattr(session, "store_domain", None) or ""
 
     cached = None
     if cache_service is not None:
         try:
-            cache_domain = store_domain or ""
+            cache_domain = body.store_domain or session.get("store_domain") or "" if session else ""
             cached = await cache_service.lookup(body.message, cache_domain)
         except Exception:
             logger.opt(exception=True).warning("Semantic cache lookup failed, proceeding without cache")
 
     if cached:
-        logger.info("Returning cached response for store_domain='{}'", cache_domain)
+        logger.info("Returning cached response")
         response_text = cached.response
         products = cached.products
     else:

@@ -1,15 +1,11 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { useLocation, useNavigate } from 'react-router-dom'
 import { v4 as uuidv4 } from 'uuid'
-import ChatMessage from '../components/ChatMessage'
-import ChatInput from '../components/ChatInput'
-import ProductCard from '../components/ProductCard'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
 const INITIAL_MESSAGE = {
   role: 'assistant',
-  text: "Hello! I'm your Personal Shopping Agent. Paste a Shopify store URL above and tell me what you're looking for. I'll curate the best products just for you.",
+  text: "Hey there! What can I help you find today?",
 }
 
 function getOrCreateUserId() {
@@ -25,36 +21,24 @@ function getOrCreateSessionId() {
   let sessionId = localStorage.getItem('shopify_assistant_last_session_id')
   if (!sessionId) {
     sessionId = uuidv4()
+    localStorage.setItem('shopify_assistant_last_session_id', sessionId)
   }
   return sessionId
 }
 
 export default function ChatPage() {
-  const location = useLocation()
-  const navigate = useNavigate()
-  const initialStoreUrl = location.state?.storeUrl || ''
-
-  const [storeUrl, setStoreUrl] = useState(initialStoreUrl)
-  const [storeName, setStoreName] = useState('Your Store')
   const [messages, setMessages] = useState([INITIAL_MESSAGE])
   const [products, setProducts] = useState([])
   const [loading, setLoading] = useState(false)
-  const [ingesting, setIngesting] = useState(false)
   const [userId] = useState(() => getOrCreateUserId())
   const [sessionId, setSessionId] = useState(() => getOrCreateSessionId())
   const [sessions, setSessions] = useState([])
-  const [showStoreModal, setShowStoreModal] = useState(false)
-  const [modalStoreUrl, setModalStoreUrl] = useState('')
-  const [selectedSessionForIndex, setSelectedSessionForIndex] = useState(null)
   const [isLoadingLastSession, setIsLoadingLastSession] = useState(true)
   const chatEndRef = useRef(null)
 
-  // Create session on backend when sessionId changes (only if store info is available)
+  // Create session on backend
   useEffect(() => {
     const createSession = async () => {
-      // Don't create session yet if we're just about to index a store
-      if (showStoreModal && !storeUrl) return
-      
       try {
         await fetch(`${API_URL}/chat/sessions`, {
           method: 'POST',
@@ -62,8 +46,6 @@ export default function ChatPage() {
           body: JSON.stringify({
             user_id: userId,
             session_id: sessionId,
-            store_url: storeUrl || null,
-            store_domain: storeName !== 'Your Store' ? storeName : null,
           }),
         })
       } catch (err) {
@@ -71,7 +53,7 @@ export default function ChatPage() {
       }
     }
     createSession()
-  }, [sessionId, userId, storeUrl, storeName, showStoreModal])
+  }, [sessionId, userId])
 
   // Load user's sessions
   const loadSessions = useCallback(async () => {
@@ -90,7 +72,7 @@ export default function ChatPage() {
     loadSessions()
   }, [loadSessions])
 
-  // Load messages for current session
+  // Load messages for a session
   const loadSessionMessages = useCallback(async (sid) => {
     try {
       const res = await fetch(`${API_URL}/chat/sessions/${sid}/messages`)
@@ -103,10 +85,11 @@ export default function ChatPage() {
           products: m.products_json || undefined,
         }))
         setMessages(loaded)
-        // Set latest products if any
         const lastAssistant = [...data].reverse().find((m) => m.role === 'assistant')
         if (lastAssistant?.products_json?.length) {
           setProducts(lastAssistant.products_json)
+        } else {
+          setProducts([])
         }
       } else {
         setMessages([INITIAL_MESSAGE])
@@ -117,7 +100,7 @@ export default function ChatPage() {
     }
   }, [])
 
-  // Load last session on mount if it exists
+  // Load last session on mount
   useEffect(() => {
     const loadLastSession = async () => {
       const lastSessionId = localStorage.getItem('shopify_assistant_last_session_id')
@@ -125,17 +108,13 @@ export default function ChatPage() {
         setIsLoadingLastSession(false)
         return
       }
-      
       try {
-        // Fetch the session details
         const res = await fetch(`${API_URL}/chat/sessions?user_id=${userId}`)
         if (res.ok) {
           const allSessions = await res.json()
           const lastSession = allSessions.find(s => s.session_id === lastSessionId)
           if (lastSession) {
             setSessionId(lastSessionId)
-            setStoreUrl(lastSession.store_url || '')
-            setStoreName(lastSession.store_domain || 'Your Store')
             await loadSessionMessages(lastSessionId)
           }
         }
@@ -145,7 +124,6 @@ export default function ChatPage() {
         setIsLoadingLastSession(false)
       }
     }
-    
     loadLastSession()
   }, [userId, loadSessionMessages])
 
@@ -156,9 +134,10 @@ export default function ChatPage() {
   const handleNewSession = () => {
     const newSessionId = uuidv4()
     setSessionId(newSessionId)
-    setSelectedSessionForIndex(newSessionId)
-    setShowStoreModal(true)
-    setModalStoreUrl('')
+    localStorage.setItem('shopify_assistant_last_session_id', newSessionId)
+    setMessages([INITIAL_MESSAGE])
+    setProducts([])
+    loadSessions()
   }
 
   const handleSwitchSession = (sid) => {
@@ -167,110 +146,32 @@ export default function ChatPage() {
     loadSessionMessages(sid)
   }
 
-  const handleIndexAndSwitch = async () => {
-    if (!modalStoreUrl.trim()) return
-    setIngesting(true)
-    try {
-      const res = await fetch(`${API_URL}/index`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ store: modalStoreUrl.trim() }),
-      })
-      if (!res.ok) throw new Error('Failed to index store')
-      const data = await res.json()
-      const storeDomain = data.store_domain || modalStoreUrl.trim()
-      
-      setStoreUrl(modalStoreUrl.trim())
-      setStoreName(storeDomain)
-      setShowStoreModal(false)
-      setModalStoreUrl('')
-      
-      setMessages([
-        {
-          role: 'assistant',
-          text: `Great! I've indexed **${storeDomain}**. I found ${data.total_products_received} products. What would you like to find?`,
-        },
-      ])
-      setProducts([])
-      
-      // Create/update session with store info and store domain as the name
-      await fetch(`${API_URL}/chat/sessions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          user_id: userId,
-          session_id: selectedSessionForIndex,
-          store_url: modalStoreUrl.trim(),
-          store_domain: storeDomain,
-        }),
-      })
-      
-      // Save session ID to localStorage for next page load
-      localStorage.setItem('shopify_assistant_last_session_id', selectedSessionForIndex)
-      
-      // Reload sessions to show the updated session with new name
-      loadSessions()
-    } catch (err) {
-      alert(`Error: ${err.message}`)
-    } finally {
-      setIngesting(false)
-    }
-  }
-
   const handleDeleteSession = async (e, sid) => {
     e.stopPropagation()
     if (!confirm('Are you sure you want to delete this session?')) return
     try {
-      const res = await fetch(`${API_URL}/chat/sessions/${sid}`, {
-        method: 'DELETE',
-      })
+      const res = await fetch(`${API_URL}/chat/sessions/${sid}`, { method: 'DELETE' })
       if (!res.ok) throw new Error('Failed to delete session')
-      setSessions((prev) => prev.filter((s) => s.session_id !== sid))
-      if (sid === sessionId) {
-        handleNewSession()
-      }
+      setSessions((prev) => {
+        const nextSessions = prev.filter((s) => s.session_id !== sid)
+        if (sid === sessionId) {
+          const nextSession = nextSessions[0]
+          if (nextSession) {
+            setSessionId(nextSession.session_id)
+            localStorage.setItem('shopify_assistant_last_session_id', nextSession.session_id)
+            loadSessionMessages(nextSession.session_id)
+          } else {
+            const newSid = uuidv4()
+            setSessionId(newSid)
+            localStorage.setItem('shopify_assistant_last_session_id', newSid)
+            setMessages([INITIAL_MESSAGE])
+            setProducts([])
+          }
+        }
+        return nextSessions
+      })
     } catch (err) {
       console.error('Failed to delete session:', err)
-    }
-  }
-
-  const handleIndexStore = async () => {
-    if (!storeUrl.trim()) return
-    setIngesting(true)
-    try {
-      const res = await fetch(`${API_URL}/index`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ store: storeUrl.trim() }),
-      })
-      if (!res.ok) throw new Error('Failed to index store')
-      const data = await res.json()
-      setStoreName(data.store_domain || storeUrl.trim())
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: 'assistant',
-          text: `Great! I've indexed **${data.store_domain}**. I found ${data.total_products_received} products. What would you like to find?`,
-        },
-      ])
-      // Update session with store info
-      await fetch(`${API_URL}/chat/sessions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          user_id: userId,
-          session_id: sessionId,
-          store_url: storeUrl.trim(),
-          store_domain: data.store_domain,
-        }),
-      })
-    } catch (err) {
-      setMessages((prev) => [
-        ...prev,
-        { role: 'assistant', text: `Sorry, I couldn't index that store: ${err.message}` },
-      ])
-    } finally {
-      setIngesting(false)
     }
   }
 
@@ -307,47 +208,24 @@ export default function ChatPage() {
     <div className="min-h-screen flex bg-white">
       <style>{`
         @keyframes slideInLeft {
-          from {
-            opacity: 0;
-            transform: translateX(-20px);
-          }
-          to {
-            opacity: 1;
-            transform: translateX(0);
-          }
+          from { opacity: 0; transform: translateX(-20px); }
+          to { opacity: 1; transform: translateX(0); }
         }
         @keyframes slideInRight {
-          from {
-            opacity: 0;
-            transform: translateX(20px);
-          }
-          to {
-            opacity: 1;
-            transform: translateX(0);
-          }
+          from { opacity: 0; transform: translateX(20px); }
+          to { opacity: 1; transform: translateX(0); }
         }
         @keyframes fadeIn {
-          from {
-            opacity: 0;
-          }
-          to {
-            opacity: 1;
-          }
+          from { opacity: 0; }
+          to { opacity: 1; }
         }
-        .animate-slideInLeft {
-          animation: slideInLeft 0.5s ease-out forwards;
-        }
-        .animate-slideInRight {
-          animation: slideInRight 0.5s ease-out forwards;
-        }
-        .animate-fadeIn {
-          animation: fadeIn 0.6s ease-out forwards;
-        }
+        .animate-slideInLeft { animation: slideInLeft 0.5s ease-out forwards; }
+        .animate-slideInRight { animation: slideInRight 0.5s ease-out forwards; }
+        .animate-fadeIn { animation: fadeIn 0.6s ease-out forwards; }
       `}</style>
 
-      {/* Fixed Left Sidebar Navigation (w-72) */}
+      {/* Sidebar */}
       <aside className="fixed left-0 top-0 h-full w-72 flex flex-col bg-white border-r border-neutral-200 shadow-[20px_0_40px_-15px_rgba(0,0,0,0.08)] z-40 animate-slideInLeft">
-        {/* Header */}
         <div className="p-6 border-b border-neutral-200">
           <button
             onClick={handleNewSession}
@@ -359,10 +237,8 @@ export default function ChatPage() {
           <p className="text-label-md font-bold text-neutral-400 uppercase tracking-wider">Sessions</p>
         </div>
 
-        {/* Sessions List */}
         <nav className="flex-1 overflow-y-auto py-4">
           <div className="px-3">
-            <p className="px-3 mb-2 text-[11px] font-bold text-neutral-400 uppercase tracking-wider">Sessions</p>
             <ul className="space-y-1">
               {sessions.length === 0 ? (
                 <li className="px-3 py-2 text-body-sm text-neutral-400 text-center">No sessions yet</li>
@@ -371,9 +247,15 @@ export default function ChatPage() {
                   <li
                     key={s.session_id}
                     onClick={() => handleSwitchSession(s.session_id)}
-                    className="group flex items-center justify-between px-3 py-2 rounded-lg text-neutral-500 hover:bg-neutral-50 transition-all cursor-pointer"
+                    className={`group flex items-center justify-between px-3 py-2 rounded-lg transition-all cursor-pointer ${
+                      s.session_id === sessionId
+                        ? 'bg-emerald-50 text-primary-container font-semibold'
+                        : 'text-neutral-500 hover:bg-neutral-50'
+                    }`}
                   >
-                    <span className="text-body-sm truncate pr-2">{s.store_domain || s.store_url || 'New Session'}</span>
+                    <span className="text-body-sm truncate pr-2">
+                      {s.store_domain || `Session ${s.session_id.slice(0, 8)}`}
+                    </span>
                     <button
                       onClick={(e) => handleDeleteSession(e, s.session_id)}
                       className="opacity-0 group-hover:opacity-100 p-1 hover:text-error transition-opacity"
@@ -388,11 +270,10 @@ export default function ChatPage() {
         </nav>
       </aside>
 
-      {/* Main Content Area - Offset for fixed sidebar */}
+      {/* Main Content */}
       <main className="ml-72 flex w-full h-screen overflow-hidden">
-        {/* Left: Chat Interface (50%) */}
+        {/* Chat */}
         <section className="w-1/2 flex flex-col bg-white border-r border-neutral-200 animate-fadeIn">
-          {/* Header/Status */}
           <div className="h-16 px-6 flex items-center justify-between border-b border-neutral-100">
             <div className="flex items-center gap-3">
               <div className="h-8 w-8 rounded-full bg-emerald-100 flex items-center justify-center">
@@ -408,12 +289,8 @@ export default function ChatPage() {
                 </p>
               </div>
             </div>
-            <button className="p-2 hover:bg-neutral-50 rounded-lg text-neutral-400 transition-colors">
-              <span className="material-symbols-outlined">more_horiz</span>
-            </button>
           </div>
 
-          {/* Chat History */}
           <div className="flex-1 overflow-y-auto p-6 space-y-6">
             {messages.map((msg, idx) => (
               <div key={idx} style={{ animation: `slideInLeft 0.3s ease-out ${idx * 50}ms forwards`, opacity: 0 }}>
@@ -461,7 +338,7 @@ export default function ChatPage() {
             <div ref={chatEndRef} />
           </div>
 
-          {/* Input Bar */}
+          {/* Input */}
           <div className="p-6 bg-white border-t border-neutral-100">
             <form
               onSubmit={(e) => {
@@ -474,9 +351,6 @@ export default function ChatPage() {
               }}
               className="flex items-end gap-3 bg-white border border-neutral-300 rounded-xl p-2.5 focus-within:border-primary-container focus-within:ring-1 focus-within:ring-primary-container transition-all shadow-sm"
             >
-              <button type="button" className="p-2 hover:bg-neutral-50 rounded-lg text-neutral-400 transition-colors">
-                <span className="material-symbols-outlined">attach_file</span>
-              </button>
               <textarea
                 placeholder="Ask me to find anything..."
                 rows="1"
@@ -504,7 +378,7 @@ export default function ChatPage() {
           </div>
         </section>
 
-        {/* Right: Recommendations Grid (50%) */}
+        {/* Product Grid */}
         <section className="w-1/2 flex flex-col bg-surface overflow-y-auto animate-slideInRight">
           <div className="p-8">
             <div className="flex items-center justify-between mb-8">
@@ -530,44 +404,42 @@ export default function ChatPage() {
 
             {products.length > 0 ? (
               <div className="grid grid-cols-2 gap-6">
-                {/* Large Featured Card */}
-                {products.length > 0 && (
-                  <a
-                    key={`featured-${products[0].id}`}
-                    href={products[0].link || '#'}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="col-span-2 group bg-white rounded-xl border border-neutral-200 overflow-hidden shadow-sm hover:shadow-xl transition-all duration-300 cursor-pointer block"
-                  >
-                    <div className="relative h-72 overflow-hidden bg-neutral-100">
-                      <img
-                        src={products[0].image || 'https://via.placeholder.com/400x400'}
-                        alt={products[0].title}
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                      />
-                      <div className="absolute top-4 left-4 bg-primary-container text-white text-[10px] font-bold px-2 py-1 rounded tracking-widest uppercase">
-                        Best Match
-                      </div>
+                {/* Featured Card */}
+                <a
+                  key={`featured-${products[0].id}`}
+                  href={products[0].link || '#'}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="col-span-2 group bg-white rounded-xl border border-neutral-200 overflow-hidden shadow-sm hover:shadow-xl transition-all duration-300 cursor-pointer block"
+                >
+                  <div className="relative h-72 overflow-hidden bg-neutral-100">
+                    <img
+                      src={products[0].image || 'https://via.placeholder.com/400x400'}
+                      alt={products[0].title}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                    />
+                    <div className="absolute top-4 left-4 bg-primary-container text-white text-[10px] font-bold px-2 py-1 rounded tracking-widest uppercase">
+                      Best Match
                     </div>
-                    <div className="p-5 flex justify-between items-end">
-                      <div>
-                        <p className="text-[11px] text-primary-container font-bold uppercase tracking-widest mb-1">
-                          {products[0].vendor || 'Brand'}
-                        </p>
-                        <h3 className="font-h3 text-on-surface mb-1">{products[0].title}</h3>
-                        <p className="text-body-sm text-secondary line-clamp-1">{products[0].description || 'Premium product'}</p>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-h3 font-bold text-on-surface">${products[0].price || '0.00'}</p>
-                        <span className="mt-2 flex items-center justify-center text-primary-container group-hover:text-primary transition-colors text-2xl">
-                          <span className="material-symbols-outlined">arrow_outward</span>
-                        </span>
-                      </div>
+                  </div>
+                  <div className="p-5 flex justify-between items-end">
+                    <div>
+                      <p className="text-[11px] text-primary-container font-bold uppercase tracking-widest mb-1">
+                        {products[0].vendor || 'Brand'}
+                      </p>
+                      <h3 className="font-h3 text-on-surface mb-1">{products[0].title}</h3>
+                      <p className="text-body-sm text-secondary line-clamp-1">{products[0].description || 'Premium product'}</p>
                     </div>
-                  </a>
-                )}
+                    <div className="text-right">
+                      <p className="text-h3 font-bold text-on-surface">${products[0].price || '0.00'}</p>
+                      <span className="mt-2 flex items-center justify-center text-primary-container group-hover:text-primary transition-colors text-2xl">
+                        <span className="material-symbols-outlined">arrow_outward</span>
+                      </span>
+                    </div>
+                  </div>
+                </a>
 
-                {/* Regular Product Cards */}
+                {/* Regular Cards */}
                 {products.slice(1).map((product, idx) => (
                   <a
                     key={product.id}
@@ -598,7 +470,6 @@ export default function ChatPage() {
                     </div>
                   </a>
                 ))}
-
               </div>
             ) : (
               <div className="flex flex-col items-center justify-center py-24 text-secondary">
@@ -610,66 +481,6 @@ export default function ChatPage() {
           </div>
         </section>
       </main>
-
-      {/* Store URL Modal */}
-      {showStoreModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full mx-4 animate-fadeIn">
-            <h2 className="text-h3 font-bold text-on-surface mb-2">Add Store URL</h2>
-            <p className="text-body-sm text-secondary mb-6">Enter your Shopify store URL to index and start shopping</p>
-            
-            <form
-              onSubmit={(e) => {
-                e.preventDefault()
-                handleIndexAndSwitch()
-              }}
-            >
-              <div className="mb-6">
-                <label className="block text-label-md text-on-surface font-semibold mb-2">Store URL</label>
-                <input
-                  type="url"
-                  value={modalStoreUrl}
-                  onChange={(e) => setModalStoreUrl(e.target.value)}
-                  placeholder="https://your-store.myshopify.com"
-                  className="w-full px-4 py-3 border-2 border-neutral-200 rounded-lg focus:border-primary-container focus:ring-2 focus:ring-primary-container/20 outline-none transition-all"
-                  autoFocus
-                />
-              </div>
-
-              <div className="flex gap-3">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowStoreModal(false)
-                    setModalStoreUrl('')
-                  }}
-                  className="flex-1 px-4 py-3 border-2 border-neutral-200 text-on-surface rounded-lg font-label-md hover:bg-neutral-50 transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={ingesting || !modalStoreUrl.trim()}
-                  className="flex-1 px-4 py-3 bg-primary-container text-white rounded-lg font-label-md hover:shadow-lg transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                >
-                  {ingesting ? (
-                    <>
-                      <span className="material-symbols-outlined animate-spin">sync</span>
-                      Indexing...
-                    </>
-                  ) : (
-                    <>
-                      <span className="material-symbols-outlined">cloud_upload</span>
-                      Index Store
-                    </>
-                  )}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   )
 }
-
