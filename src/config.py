@@ -57,6 +57,16 @@ class SemanticCacheSettings(BaseModel):
     similarity_threshold: float = Field(default=0.92, description="Minimum cosine similarity for cache hit")
     ttl_seconds: int = Field(default=86400, description="Cache entry time-to-live in seconds")
 
+class SearchSettings(BaseModel):
+    use_reranker: bool = Field(default=True, description="Use cross-encoder reranker to improve search relevance")
+    rerank_candidates_multiplier: int = Field(default=3, description="Over-fetch factor: fetch top_k * this many candidates before reranking")
+
+class CORSSettings(BaseModel):
+    allowed_origins: list[str] = Field(
+        default=["*"],
+        description="List of allowed CORS origins. Use ['*'] for dev, specific domains for production.",
+    )
+
 class Settings(BaseSettings):
     vector_db_provider: str = Field(default="PGVECTOR")
     postgres: PostgresSettings = PostgresSettings()
@@ -67,6 +77,8 @@ class Settings(BaseSettings):
     openrouter_api: OpenRouterAPISettings = OpenRouterAPISettings()
     opik: OpikSettings = OpikSettings()
     semantic_cache: SemanticCacheSettings = SemanticCacheSettings()
+    search: SearchSettings = SearchSettings()
+    cors: CORSSettings = CORSSettings()
 
     model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(
         env_file=[".env"],

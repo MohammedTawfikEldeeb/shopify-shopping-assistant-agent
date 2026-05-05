@@ -9,6 +9,7 @@ from src.agent import ShoppingAgent
 from src.agent.tools import ProductRetriever, SQLQueryTool
 from src.api.routes import chat_router, system_router
 from src.api.services.semantic_cache_service import SemanticCacheService
+from src.utils.reranker_service import warmup as warmup_reranker
 from src.config import settings
 from src.db.factory import DBType, DatabaseFactory
 from src.db.repositories.session_repository import (
@@ -83,6 +84,7 @@ async def lifespan(app: FastAPI):
     retriever = ProductRetriever(
         vector_db=shared_vector_db,
         async_session_factory=db_factory.async_session_factory,
+        use_reranker=settings.search.use_reranker,
     )
     sql_tool = SQLQueryTool(async_session_factory=db_factory.async_session_factory)
     app.state.shopping_agent = ShoppingAgent(
@@ -95,6 +97,11 @@ async def lifespan(app: FastAPI):
     logger.info("Warming up embedding model...")
     embed_query("warmup")
     logger.info("Embedding model ready")
+
+    if settings.search.use_reranker:
+        logger.info("Warming up reranker model...")
+        warmup_reranker()
+        logger.info("Reranker model ready")
 
     logger.info("API startup complete — chat-only mode (indexing via ZenML pipeline)")
 
@@ -112,8 +119,8 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=settings.cors.allowed_origins,
+    allow_credentials=True if settings.cors.allowed_origins != ["*"] else False,
     allow_methods=["*"],
     allow_headers=["*"],
 )

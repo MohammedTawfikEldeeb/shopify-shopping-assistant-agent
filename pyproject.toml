@@ -31,4 +31,5 @@ dependencies = [
     "sqlalchemy-utils>=0.42.1",
     "sqlmodel==0.0.22",
     "passlib>=1.7.4",
+    "sentence-transformers>=3.0.0",
 ]
