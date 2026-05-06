@@ -13,9 +13,10 @@ def _get_model() -> CrossEncoder:
 
 
 @opik.track(name="reranker.rerank", type="tool", tags=["reranker", "hakeem"])
-def rerank(query: str, documents: list[str], top_k: int = 10) -> list[tuple[int, float]]:
+def rerank(query: str, documents: list[str], top_k: int = 10) -> tuple[list[tuple[int, float]], list[float]]:
+    """Returns (top_k ranked indices, ALL raw scores for validation)."""
     if not documents:
-        return []
+        return [], []
 
     model = _get_model()
     scores = model.predict([(query, doc) for doc in documents])
@@ -33,7 +34,7 @@ def rerank(query: str, documents: list[str], top_k: int = 10) -> list[tuple[int,
         snippet = documents[idx][:120] + ("..." if len(documents[idx]) > 120 else "")
         logger.info("  #{} score={:.4f} | {}", rank, score, snippet)
 
-    return [(idx, float(score)) for idx, score in ranked_top]
+    return [(idx, float(score)) for idx, score in ranked_top], [float(s) for s in scores]
 
 
 def warmup() -> None:

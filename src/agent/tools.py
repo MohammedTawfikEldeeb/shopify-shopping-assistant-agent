@@ -10,6 +10,7 @@ from sqlalchemy.orm import selectinload
 
 from src.utils.embedding_service import embed_query
 from src.utils.reranker_service import rerank
+from src.utils.retrieval_validator import RetrievalValidator
 from src.infrastructure.vectordb.providers.pgvector import PGVectorProvider
 from src.db.session import get_async_session
 from src.db.models import Product
@@ -23,6 +24,7 @@ class ProductRetriever:
         self.collection_name = "product_vectors"
         self.async_session_factory = async_session_factory
         self.use_reranker = use_reranker
+        self.validator = RetrievalValidator()
 
     def _build_rerank_text(self, product: Product, meta: dict) -> str:
         parts = []
@@ -96,7 +98,35 @@ class ProductRetriever:
                 rerank_docs.append(self._build_rerank_text(product, meta))
                 sid_order.append(sid)
 
-            ranked_indices = await asyncio.to_thread(rerank, query, rerank_docs, top_k)
+            ranked_indices, all_scores = await asyncio.to_thread(rerank, query, rerank_docs, top_k)
+
+            # Validate score distribution before accepting results
+            validation = self.validator.validate(all_scores, top_k=top_k)
+            steps.append({
+                "tool": "validator",
+                "status": "done" if validation.is_valid else "rejected",
+                "valid": validation.is_valid,
+                "reason": validation.reason,
+                "metrics": validation.metrics,
+            })
+            logger.info(
+                "Retrieval validation query={} valid={} reason='{}' metrics={}",
+                query,
+                validation.is_valid,
+                validation.reason,
+                validation.metrics,
+            )
+
+            if not validation.is_valid:
+                steps.append({"tool": "product_retriever", "status": "done", "found": 0, "rejected": True})
+                return {
+                    "products": [],
+                    "steps": steps,
+                    "validation": {
+                        "valid": False,
+                        "reason": validation.reason,
+                    },
+                }
 
             ordered_products = []
             for idx, score in ranked_indices:

@@ -51,9 +51,11 @@ def _build_context(summary: str, products: list[dict]) -> str:
     return "\n".join(parts)
 
 
-def _format_products_plain(products: list[dict]) -> str:
+def _format_products_plain(products: list[dict], validation_reason: str | None = None) -> str:
     """Format product results as short plain text lines for the LLM. Only titles to save tokens."""
     if not products:
+        if validation_reason:
+            return f"Retrieval rejected: {validation_reason}. Tell the user honestly that you couldn't find matching products in the store's catalog and offer to help with something else."
         return "No products found matching the query in this store's catalog. Tell the user that no matching products were found and offer to help with something else."
 
     lines = []
@@ -168,7 +170,9 @@ async def tools_node(
                 products = []
                 product_ids = []
 
-            content = _format_products_plain(found_products)
+            validation = retriever_result.get("validation")
+            validation_reason = validation.get("reason") if validation else None
+            content = _format_products_plain(found_products, validation_reason)
             results.append(ToolMessage(content=content, tool_call_id=call_id))
 
         elif name == "sql_query":
