@@ -8,3 +8,5 @@ class AgentState(TypedDict):
     summary: str
     products: list[dict]
     product_ids: list[str]
+    steps: list[dict]
+    product_sets: list[list[dict]]

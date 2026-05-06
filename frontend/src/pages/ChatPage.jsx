@@ -26,10 +26,156 @@ function getOrCreateSessionId() {
   return sessionId
 }
 
+function useTypewriter(text, speed = 12) {
+  const [displayed, setDisplayed] = useState('')
+  const indexRef = useRef(0)
+  const textRef = useRef(text)
+
+  useEffect(() => {
+    textRef.current = text
+    indexRef.current = 0
+    setDisplayed('')
+    if (!text) return
+
+    const timer = setInterval(() => {
+      indexRef.current += 1
+      setDisplayed(textRef.current.slice(0, indexRef.current))
+      if (indexRef.current >= textRef.current.length) {
+        clearInterval(timer)
+      }
+    }, speed)
+
+    return () => clearInterval(timer)
+  }, [text, speed])
+
+  return displayed
+}
+
+function AssistantMessage({ text, animate }) {
+  const typed = useTypewriter(text, 10)
+  const displayed = animate ? typed : text
+  return <p className="text-body-md text-on-surface leading-relaxed">{displayed}</p>
+}
+
+function StepIndicator({ steps }) {
+  if (!steps || steps.length === 0) return null
+
+  const lastStep = steps[steps.length - 1]
+  const statusMap = {
+    searching: { icon: 'search', label: 'Searching products...' },
+    retrieved: { icon: 'database', label: `Found ${lastStep.candidates || ''} candidates` },
+    reranking: { icon: 'auto_awesome', label: 'Reranking for best matches...' },
+    done: { icon: 'check_circle', label: lastStep.found !== undefined ? `Found ${lastStep.found} products` : 'Done' },
+    running: { icon: 'query_stats', label: 'Querying details...' },
+    error: { icon: 'error', label: 'Something went wrong' },
+  }
+
+  const status = statusMap[lastStep.status] || { icon: 'pending', label: 'Working...' }
+
+  return (
+    <div className="flex items-center gap-2 text-[11px] text-neutral-500 mt-1 animate-fadeIn">
+      <span className="material-symbols-outlined text-[14px] text-primary">{status.icon}</span>
+      <span>{status.label}</span>
+    </div>
+  )
+}
+
+function TracePanel({ steps }) {
+  const [expanded, setExpanded] = useState(false)
+  if (!steps || steps.length === 0) return null
+
+  const getStepIcon = (tool) => {
+    if (tool === 'product_retriever') return 'search'
+    if (tool === 'reranker') return 'auto_awesome'
+    if (tool === 'sql_query') return 'query_stats'
+    return 'build'
+  }
+
+  const getStepColor = (status) => {
+    if (status === 'done') return 'text-emerald-600 bg-emerald-50 border-emerald-200'
+    if (status === 'error') return 'text-red-600 bg-red-50 border-red-200'
+    if (status === 'running' || status === 'reranking' || status === 'searching') return 'text-amber-600 bg-amber-50 border-amber-200'
+    return 'text-neutral-600 bg-neutral-50 border-neutral-200'
+  }
+
+  const getStatusIcon = (status) => {
+    if (status === 'done') return 'check_circle'
+    if (status === 'error') return 'error'
+    if (status === 'running' || status === 'reranking' || status === 'searching') return 'pending'
+    return 'radio_button_unchecked'
+  }
+
+  return (
+    <div className="mt-2 border-t border-emerald-100 pt-2">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="flex items-center gap-1.5 text-[10px] text-neutral-400 hover:text-neutral-600 transition-colors"
+      >
+        <span className="material-symbols-outlined text-[12px]">{expanded ? 'expand_less' : 'expand_more'}</span>
+        <span className="font-medium uppercase tracking-tighter">
+          {expanded ? 'Hide trace' : `Trace (${steps.length} steps)`}
+        </span>
+      </button>
+
+      {expanded && (
+        <div className="mt-2 space-y-2">
+          {steps.map((step, i) => (
+            <div key={i} className={`flex items-start gap-2 p-2 rounded-lg border ${getStepColor(step.status)}`}>
+              <span className="material-symbols-outlined text-[14px] mt-0.5">
+                {getStatusIcon(step.status)}
+              </span>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <span className="material-symbols-outlined text-[12px]">{getStepIcon(step.tool)}</span>
+                  <span className="text-[11px] font-semibold capitalize">{step.tool.replace('_', ' ')}</span>
+                  <span className="text-[10px] opacity-60 ml-auto">{step.status}</span>
+                </div>
+                {step.query && (
+                  <p className="text-[10px] mt-1 opacity-80 truncate" title={step.query}>
+                    Query: {step.query}
+                  </p>
+                )}
+                {step.candidates !== undefined && (
+                  <p className="text-[10px] mt-0.5 opacity-80">
+                    Retrieved {step.candidates} candidates
+                  </p>
+                )}
+                {step.returned !== undefined && (
+                  <p className="text-[10px] mt-0.5 opacity-80">
+                    Returned top {step.returned} after reranking
+                  </p>
+                )}
+                {step.found !== undefined && (
+                  <p className="text-[10px] mt-0.5 opacity-80">
+                    Found {step.found} products
+                  </p>
+                )}
+                {step.rows !== undefined && (
+                  <p className="text-[10px] mt-0.5 opacity-80">
+                    Query returned {step.rows} rows
+                  </p>
+                )}
+                {step.error && (
+                  <p className="text-[10px] mt-0.5 text-red-500">
+                    Error: {step.error}
+                  </p>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function ChatPage() {
   const [messages, setMessages] = useState([INITIAL_MESSAGE])
   const [products, setProducts] = useState([])
+  const [productSets, setProductSets] = useState([])
+  const [currentSetIndex, setCurrentSetIndex] = useState(-1)
   const [loading, setLoading] = useState(false)
+  const [steps, setSteps] = useState([])
   const [userId] = useState(() => getOrCreateUserId())
   const [sessionId, setSessionId] = useState(() => getOrCreateSessionId())
   const [sessions, setSessions] = useState([])
@@ -88,12 +234,18 @@ export default function ChatPage() {
         const lastAssistant = [...data].reverse().find((m) => m.role === 'assistant')
         if (lastAssistant?.products_json?.length) {
           setProducts(lastAssistant.products_json)
+          setProductSets([lastAssistant.products_json])
+          setCurrentSetIndex(0)
         } else {
           setProducts([])
+          setProductSets([])
+          setCurrentSetIndex(-1)
         }
       } else {
         setMessages([INITIAL_MESSAGE])
         setProducts([])
+        setProductSets([])
+        setCurrentSetIndex(-1)
       }
     } catch (err) {
       console.error('Failed to load messages:', err)
@@ -137,6 +289,8 @@ export default function ChatPage() {
     localStorage.setItem('shopify_assistant_last_session_id', newSessionId)
     setMessages([INITIAL_MESSAGE])
     setProducts([])
+    setProductSets([])
+    setCurrentSetIndex(-1)
     loadSessions()
   }
 
@@ -166,6 +320,8 @@ export default function ChatPage() {
             localStorage.setItem('shopify_assistant_last_session_id', newSid)
             setMessages([INITIAL_MESSAGE])
             setProducts([])
+            setProductSets([])
+            setCurrentSetIndex(-1)
           }
         }
         return nextSessions
@@ -178,6 +334,7 @@ export default function ChatPage() {
   const handleSend = async (text) => {
     setMessages((prev) => [...prev, { role: 'user', text }])
     setLoading(true)
+    setSteps([])
     try {
       const res = await fetch(`${API_URL}/chat`, {
         method: 'POST',
@@ -190,8 +347,15 @@ export default function ChatPage() {
       })
       if (!res.ok) throw new Error('Failed to get response')
       const data = await res.json()
-      setMessages((prev) => [...prev, { role: 'assistant', text: data.response }])
-      if (data.products && data.products.length > 0) {
+      setMessages((prev) => [...prev, { role: 'assistant', text: data.response, steps: data.steps }])
+
+      const sets = data.product_sets || []
+      setProductSets(sets)
+      if (sets.length > 0) {
+        const latestIndex = sets.length - 1
+        setCurrentSetIndex(latestIndex)
+        setProducts(sets[latestIndex])
+      } else if (data.products && data.products.length > 0) {
         setProducts(data.products)
       }
     } catch (err) {
@@ -201,6 +365,7 @@ export default function ChatPage() {
       ])
     } finally {
       setLoading(false)
+      setSteps([])
     }
   }
 
@@ -300,7 +465,8 @@ export default function ChatPage() {
                       <span className="material-symbols-outlined text-primary-container text-[18px]">auto_awesome</span>
                     </div>
                     <div className="bg-[#F0F8F5] p-4 rounded-2xl rounded-tl-none border border-emerald-50 shadow-sm max-w-[85%]">
-                      <p className="text-body-md text-on-surface leading-relaxed">{msg.text}</p>
+                      <AssistantMessage text={msg.text} animate={idx === messages.length - 1} />
+                      <TracePanel steps={msg.steps} />
                       <span className="text-[10px] text-neutral-400 mt-2 block font-medium uppercase tracking-tighter">
                         Assistant • {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </span>
@@ -326,12 +492,31 @@ export default function ChatPage() {
                 <div className="h-8 w-8 rounded-full bg-emerald-50 shrink-0 flex items-center justify-center border border-emerald-100">
                   <span className="material-symbols-outlined text-primary-container text-[18px]">auto_awesome</span>
                 </div>
-                <div className="bg-[#F0F8F5] p-4 rounded-2xl rounded-tl-none border border-emerald-50 shadow-sm">
-                  <div className="flex gap-2">
+                <div className="bg-[#F0F8F5] p-4 rounded-2xl rounded-tl-none border border-emerald-50 shadow-sm max-w-[85%]">
+                  <div className="flex gap-2 mb-2">
                     <span className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></span>
                     <span className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></span>
                     <span className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></span>
                   </div>
+                  <StepIndicator steps={steps} />
+                  {steps.length > 0 && (
+                    <div className="mt-2 space-y-1.5">
+                      {steps.map((step, i) => (
+                        <div key={i} className="flex items-center gap-2 text-[10px] text-neutral-500">
+                          <span className="material-symbols-outlined text-[12px]">
+                            {step.status === 'done' ? 'check_circle' : step.status === 'error' ? 'error' : 'pending'}
+                          </span>
+                          <span className="capitalize">{step.tool.replace('_', ' ')}</span>
+                          <span className="opacity-60">{step.status}</span>
+                          {step.query && (
+                            <span className="opacity-40 truncate max-w-[200px]" title={step.query}>
+                              — {step.query}
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -385,21 +570,54 @@ export default function ChatPage() {
               <div>
                 <h2 className="font-h2 text-on-surface mb-1">Curated Recommendations</h2>
                 <p className="text-body-sm text-secondary">
-                  {products.length > 0
+                  {productSets.length > 1
+                    ? `Result ${currentSetIndex + 1} of ${productSets.length}`
+                    : products.length > 0
                     ? `Based on your recent request`
                     : 'Products will appear here'}
                 </p>
               </div>
-              {products.length > 0 && (
-                <div className="flex gap-2">
-                  <button className="p-2 bg-white border border-neutral-200 rounded-lg shadow-sm hover:bg-neutral-50 transition-colors">
-                    <span className="material-symbols-outlined text-[20px]">tune</span>
-                  </button>
-                  <button className="p-2 bg-white border border-neutral-200 rounded-lg shadow-sm hover:bg-neutral-50 transition-colors">
-                    <span className="material-symbols-outlined text-[20px]">grid_view</span>
-                  </button>
-                </div>
-              )}
+              <div className="flex items-center gap-2">
+                {productSets.length > 1 && (
+                  <div className="flex items-center gap-1 mr-2">
+                    <button
+                      onClick={() => {
+                        const newIndex = Math.max(0, currentSetIndex - 1)
+                        setCurrentSetIndex(newIndex)
+                        setProducts(productSets[newIndex])
+                      }}
+                      disabled={currentSetIndex <= 0}
+                      className="p-1.5 rounded-md border border-neutral-200 bg-white hover:bg-neutral-50 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                    >
+                      <span className="material-symbols-outlined text-[16px]">arrow_back</span>
+                    </button>
+                    <span className="text-[11px] text-neutral-500 font-medium min-w-[3rem] text-center">
+                      {currentSetIndex + 1} / {productSets.length}
+                    </span>
+                    <button
+                      onClick={() => {
+                        const newIndex = Math.min(productSets.length - 1, currentSetIndex + 1)
+                        setCurrentSetIndex(newIndex)
+                        setProducts(productSets[newIndex])
+                      }}
+                      disabled={currentSetIndex >= productSets.length - 1}
+                      className="p-1.5 rounded-md border border-neutral-200 bg-white hover:bg-neutral-50 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                    >
+                      <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
+                    </button>
+                  </div>
+                )}
+                {products.length > 0 && (
+                  <div className="flex gap-2">
+                    <button className="p-2 bg-white border border-neutral-200 rounded-lg shadow-sm hover:bg-neutral-50 transition-colors">
+                      <span className="material-symbols-outlined text-[20px]">tune</span>
+                    </button>
+                    <button className="p-2 bg-white border border-neutral-200 rounded-lg shadow-sm hover:bg-neutral-50 transition-colors">
+                      <span className="material-symbols-outlined text-[20px]">grid_view</span>
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
 
             {products.length > 0 ? (

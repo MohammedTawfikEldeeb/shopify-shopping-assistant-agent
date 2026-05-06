@@ -38,15 +38,20 @@ class ProductRetriever:
         return " ".join(parts) if parts else product.title or ""
 
     @opik.track(name="retriever.search", type="tool", tags=["retriever", "hakeem"])
-    async def search(self, query: str, top_k: int = 30) -> list[dict[str, Any]]:
+    async def search(self, query: str, top_k: int = 30) -> dict[str, Any]:
+        steps = []
+        steps.append({"tool": "product_retriever", "status": "searching", "query": query})
+
         vector = await asyncio.to_thread(embed_query, query)
 
         candidate_count = self.RETRIEVER_TOP_K if self.use_reranker else top_k
         results = await self.vector_db.query(self.collection_name, vector, candidate_count)
         if not results:
-            return []
+            steps.append({"tool": "product_retriever", "status": "done", "found": 0})
+            return {"products": [], "steps": steps}
 
         logger.info("Vector search query={} candidates={} top_k={}", query, len(results), top_k)
+        steps.append({"tool": "product_retriever", "status": "retrieved", "candidates": len(results)})
 
         shopify_ids = []
         meta_map = {}
@@ -63,7 +68,8 @@ class ProductRetriever:
                 result_texts[sid] = r.get("text", "") or meta.get("text", "") or ""
 
         if not shopify_ids:
-            return []
+            steps.append({"tool": "product_retriever", "status": "done", "found": 0})
+            return {"products": [], "steps": steps}
 
         async with get_async_session(self.async_session_factory) as session:
             result = await session.scalars(
@@ -83,6 +89,7 @@ class ProductRetriever:
                 product_map[product.shopify_product_id] = (product, meta)
 
         if self.use_reranker and len(product_map) > 1:
+            steps.append({"tool": "reranker", "status": "reranking", "candidates": len(product_map), "top_k": top_k})
             rerank_docs = []
             sid_order = []
             for sid, (product, meta) in product_map.items():
@@ -102,10 +109,12 @@ class ProductRetriever:
                     product.title,
                 )
                 ordered_products.append((product, meta, score))
+            steps.append({"tool": "reranker", "status": "done", "returned": len(ordered_products)})
         else:
             ordered_products = [
                 (p, m, None) for p, m in product_map.values()
             ]
+            steps.append({"tool": "product_retriever", "status": "done", "found": len(ordered_products), "reranked": False})
 
         product_list = []
         for product, meta, score in ordered_products:
@@ -140,7 +149,8 @@ class ProductRetriever:
                 "tags": meta.get("tags", []),
             })
 
-        return product_list
+        steps.append({"tool": "product_retriever", "status": "done", "found": len(product_list)})
+        return {"products": product_list, "steps": steps}
 
 
 class SQLQueryTool:

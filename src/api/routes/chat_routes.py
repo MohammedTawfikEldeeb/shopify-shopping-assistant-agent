@@ -85,8 +85,11 @@ async def chat(
             store_domain=body.store_domain,
         )
 
+    latest_snapshot = await state_repo.get_latest_by_session_id(body.session_id)
+    has_context = latest_snapshot is not None and latest_snapshot.get("state_json", {}).get("products")
+
     cached = None
-    if cache_service is not None:
+    if cache_service is not None and not has_context:
         try:
             cache_domain = body.store_domain or session.get("store_domain") or "" if session else ""
             cached = await cache_service.lookup(body.message, cache_domain)
@@ -97,6 +100,8 @@ async def chat(
         logger.info("Returning cached response")
         response_text = cached.response
         products = cached.products
+        steps = []
+        product_sets = [cached.products] if cached.products else []
     else:
         await chat_repo.create_message(
             session_id=body.session_id,
@@ -104,12 +109,11 @@ async def chat(
             content=body.message,
         )
 
-        latest_snapshot = await state_repo.get_latest_by_session_id(body.session_id)
         agent_state = None
         if latest_snapshot:
             agent_state = latest_snapshot.get("state_json")
 
-        response_text, products, new_state = await agent.chat_with_session(
+        response_text, products, steps, product_sets, new_state = await agent.chat_with_session(
             user_message=body.message,
             session_state=agent_state,
         )
@@ -123,11 +127,11 @@ async def chat(
             products_json=products or None,
         )
 
-        if cache_service is not None:
+        if cache_service is not None and not has_context and not products:
             try:
                 await cache_service.store(body.message, response_text, products or [], cache_domain)
             except Exception:
                 logger.opt(exception=True).warning("Failed to store response in semantic cache")
 
     background_tasks.add_task(opik.flush_tracker)
-    return ChatResponse(response=response_text, products=products or [])
+    return ChatResponse(response=response_text, products=products or [], steps=steps or [], product_sets=product_sets or [])

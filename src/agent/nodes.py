@@ -41,8 +41,10 @@ TOOLS = [product_retriever_tool, sql_query_tool]
 def _build_context(summary: str, products: list[dict]) -> str:
     parts = []
     if products:
-        titles = [p['title'] for p in products if p.get('title')]
-        parts.append("Previous products: " + ", ".join(titles))
+        lines = ["Previous products:"]
+        for i, p in enumerate(products, 1):
+            lines.append(f"{i}. {p['title']} (ID: {p['id']})")
+        parts.append("\n".join(lines))
     else:
         parts.append("No products found yet.")
 
@@ -50,19 +52,13 @@ def _build_context(summary: str, products: list[dict]) -> str:
 
 
 def _format_products_plain(products: list[dict]) -> str:
-    """Format product results as short plain text lines for the LLM."""
+    """Format product results as short plain text lines for the LLM. Only titles to save tokens."""
     if not products:
         return "No products found matching the query in this store's catalog. Tell the user that no matching products were found and offer to help with something else."
 
     lines = []
-    for p in products:
-        title = p.get("title", "")
-        price = f"${p['price']}" if p.get("price") else ""
-        sizes = ", ".join(p.get("available_sizes", [])) or ""
-        colors = ", ".join(p.get("available_colors", [])) or ""
-        link = p.get("link", "")
-        parts = [part for part in [title, price, sizes, colors, link] if part]
-        lines.append(" — ".join(parts))
+    for i, p in enumerate(products, 1):
+        lines.append(f"{i}. {p.get('title', '')}")
 
     return "\n".join(lines)
 
@@ -150,6 +146,8 @@ async def tools_node(
     results = []
     products = state.get("products", [])
     product_ids = state.get("product_ids", [])
+    steps = state.get("steps", [])
+    product_sets = state.get("product_sets", [])
 
     for tool_call in tool_calls:
         name = tool_call["name"]
@@ -158,11 +156,14 @@ async def tools_node(
 
         if name == "product_retriever":
             query = args.get("query", "")
-            found_products = await retriever.search(query, top_k=10)
+            retriever_result = await retriever.search(query, top_k=10)
+            found_products = retriever_result.get("products", [])
+            steps.extend(retriever_result.get("steps", []))
 
             if found_products:
                 products = found_products
                 product_ids = [p["id"] for p in found_products]
+                product_sets = product_sets + [found_products]
             else:
                 products = []
                 product_ids = []
@@ -171,14 +172,17 @@ async def tools_node(
             results.append(ToolMessage(content=content, tool_call_id=call_id))
 
         elif name == "sql_query":
+            steps.append({"tool": "sql_query", "status": "running", "query": args.get("query", "")})
             if not product_ids:
                 content = "No products in memory. Search for a product first."
             else:
                 try:
                     rows = await sql_tool.execute(args.get("query", ""))
                     content = _format_sql_results_plain(rows)
+                    steps.append({"tool": "sql_query", "status": "done", "rows": len(rows)})
                 except Exception as e:
                     content = f"SQL error: {e}"
+                    steps.append({"tool": "sql_query", "status": "error", "error": str(e)})
 
             results.append(ToolMessage(content=content, tool_call_id=call_id))
         else:
@@ -188,4 +192,6 @@ async def tools_node(
         "messages": results,
         "products": products,
         "product_ids": product_ids,
+        "steps": steps,
+        "product_sets": product_sets,
     }

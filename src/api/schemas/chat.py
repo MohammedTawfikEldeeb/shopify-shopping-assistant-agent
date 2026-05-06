@@ -31,6 +31,8 @@ class ProductCard(BaseModel):
 class ChatResponse(BaseModel):
     response: str
     products: list[ProductCard] = []
+    steps: list[dict] = []
+    product_sets: list[list[ProductCard]] = []
 
 
 class CreateSessionRequest(BaseModel):

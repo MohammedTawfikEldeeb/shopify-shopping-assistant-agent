@@ -92,6 +92,8 @@ class ShoppingAgent:
             "summary": "",
             "products": [],
             "product_ids": [],
+            "steps": [],
+            "product_sets": [],
         }
         config = {
             "run_name": "agent.chat",
@@ -111,7 +113,7 @@ class ShoppingAgent:
         self,
         user_message: str,
         session_state: dict | None = None,
-    ) -> tuple[str, list[dict], dict]:
+    ) -> tuple[str, list[dict], list[dict], list[list[dict]], dict]:
         """Session-aware chat that loads/saves state and returns the new state for persistence."""
         if session_state is not None:
             deserialized = _deserialize_state(session_state)
@@ -120,6 +122,8 @@ class ShoppingAgent:
                 "summary": deserialized.get("summary", ""),
                 "products": deserialized.get("products", []),
                 "product_ids": deserialized.get("product_ids", []),
+                "steps": deserialized.get("steps", []),
+                "product_sets": deserialized.get("product_sets", []),
             }
         else:
             state = {
@@ -127,6 +131,8 @@ class ShoppingAgent:
                 "summary": "",
                 "products": [],
                 "product_ids": [],
+                "steps": [],
+                "product_sets": [],
             }
 
         config = {
@@ -137,12 +143,14 @@ class ShoppingAgent:
         serialized_state = _serialize_state(result)
 
         products = result.get("products", [])
+        steps = result.get("steps", [])
+        product_sets = result.get("product_sets", [])
         for msg in reversed(result["messages"]):
             msg_type = getattr(msg, "type", None)
             if msg_type == "ai" and not getattr(msg, "tool_calls", None):
-                return msg.content, products, serialized_state
+                return msg.content, products, steps, product_sets, serialized_state
 
-        return "Sorry, I couldn't process that.", products, serialized_state
+        return "Sorry, I couldn't process that.", products, steps, product_sets, serialized_state
 
     @property
     def memory(self):
