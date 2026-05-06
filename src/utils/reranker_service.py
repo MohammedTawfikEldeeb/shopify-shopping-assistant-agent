@@ -1,3 +1,4 @@
+import opik
 from loguru import logger
 from sentence_transformers import CrossEncoder
 
@@ -11,11 +12,13 @@ def _get_model() -> CrossEncoder:
     return _model
 
 
+@opik.track(name="reranker.rerank", type="tool", tags=["reranker", "hakeem"])
 def rerank(query: str, documents: list[str], top_k: int = 10) -> list[tuple[int, float]]:
     if not documents:
         return []
 
-    scores = _get_model().predict([(query, doc) for doc in documents])
+    model = _get_model()
+    scores = model.predict([(query, doc) for doc in documents])
     ranked = sorted(enumerate(scores), key=lambda x: x[1], reverse=True)
 
     ranked_top = ranked[:top_k]

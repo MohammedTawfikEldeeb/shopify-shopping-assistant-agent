@@ -8,6 +8,7 @@ from html import unescape
 from typing import Any, Optional
 from urllib.parse import urlparse
 
+from loguru import logger
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -177,9 +178,36 @@ class ProductRepository(BaseRepository[Product]):
 
         await session.flush()
 
-        await self._replace_options(session, product, payload.get("options", []))
-        image_map = await self._replace_images(session, product, payload.get("images", []))
-        await self._replace_variants(session, product, payload.get("variants", []), image_map=image_map)
+        options = payload.get("options", []) or []
+        images = payload.get("images", []) or []
+        variants = payload.get("variants", []) or []
+
+        logger.info(
+            "Upserting product_id={} title='{}' | payload has options={} images={} variants={}",
+            shopify_product_id,
+            product.title,
+            len(options),
+            len(images),
+            len(variants),
+        )
+
+        try:
+            await self._replace_options(session, product, options)
+        except Exception:
+            logger.opt(exception=True).error("_replace_options FAILED for product_id={}", shopify_product_id)
+            raise
+
+        try:
+            image_map = await self._replace_images(session, product, images)
+        except Exception:
+            logger.opt(exception=True).error("_replace_images FAILED for product_id={}", shopify_product_id)
+            raise
+
+        try:
+            await self._replace_variants(session, product, variants, image_map=image_map)
+        except Exception:
+            logger.opt(exception=True).error("_replace_variants FAILED for product_id={}", shopify_product_id)
+            raise
 
         return product
 
@@ -188,24 +216,34 @@ class ProductRepository(BaseRepository[Product]):
         await session.execute(delete(ProductOption).where(ProductOption.product_id == product.id))
         await session.flush()
 
+        option_count = 0
+        value_count = 0
         for option_payload in options:
+            name = option_payload.get("name") or "Option"
+            if name and name.strip().lower() == "title":
+                continue
             option = ProductOption(
                 product=product,
-                name=option_payload.get("name") or "Option",
+                name=name,
                 position=option_payload.get("position"),
             )
             session.add(option)
             await session.flush()
-            for index, value in enumerate(option_payload.get("values", []), start=1):
+            option_count += 1
+            values = option_payload.get("values", []) or []
+            for index, value in enumerate(values, start=1):
                 session.add(ProductOptionValue(option=option, value=str(value), position=index))
+                value_count += 1
 
         await session.flush()
+        logger.info("Saved {} options with {} values for product_id={}", option_count, value_count, product.shopify_product_id)
 
     async def _replace_images(
         self, session: AsyncSession, product: Product, images: list[dict[str, Any]]
     ) -> dict[int, ProductImage]:
         await session.execute(delete(VariantImageLink).where(VariantImageLink.image_id.in_(select(ProductImage.id).where(ProductImage.product_id == product.id))))
         await session.execute(delete(ProductImage).where(ProductImage.product_id == product.id))
+        await session.flush()
 
         image_map: dict[int, ProductImage] = {}
         for image_payload in images:
@@ -224,6 +262,8 @@ class ProductRepository(BaseRepository[Product]):
             session.add(image)
             await session.flush()
             image_map[image.shopify_image_id] = image
+
+        logger.info("Saved {} images for product_id={}", len(image_map), product.shopify_product_id)
         return image_map
 
     async def _replace_variants(
@@ -236,18 +276,33 @@ class ProductRepository(BaseRepository[Product]):
     ) -> None:
         await session.execute(delete(VariantImageLink).where(VariantImageLink.variant_id.in_(select(ProductVariant.id).where(ProductVariant.product_id == product.id))))
         await session.execute(delete(ProductVariant).where(ProductVariant.product_id == product.id))
+        await session.flush()
 
+        variant_count = 0
+        link_count = 0
         for variant_payload in variants:
+            title = variant_payload.get("title") or ""
+            price = variant_payload.get("price")
+            if title and title.strip().lower() == "default title":
+                title = ""
+            elif title and price and str(title).strip() == str(price).strip():
+                title = ""
+
+            def _clean_option(val):
+                if val and str(val).strip().lower() == "default title":
+                    return None
+                return val
+
             variant = ProductVariant(
                 product=product,
                 shopify_variant_id=int(variant_payload["id"]),
-                title=variant_payload.get("title") or "",
+                title=title,
                 sku=variant_payload.get("sku"),
-                option1=variant_payload.get("option1"),
-                option2=variant_payload.get("option2"),
-                option3=variant_payload.get("option3"),
+                option1=_clean_option(variant_payload.get("option1")),
+                option2=_clean_option(variant_payload.get("option2")),
+                option3=_clean_option(variant_payload.get("option3")),
                 available=bool(variant_payload.get("available")),
-                price=self._to_decimal(variant_payload.get("price")),
+                price=self._to_decimal(price),
                 compare_at_price=self._to_decimal(variant_payload.get("compare_at_price")),
                 requires_shipping=variant_payload.get("requires_shipping"),
                 taxable=variant_payload.get("taxable"),
@@ -259,11 +314,16 @@ class ProductRepository(BaseRepository[Product]):
             )
             session.add(variant)
             await session.flush()
+            variant_count += 1
 
             featured_image = variant_payload.get("featured_image") or {}
             featured_image_id = featured_image.get("id")
             if featured_image_id and int(featured_image_id) in image_map:
                 session.add(VariantImageLink(variant=variant, image=image_map[int(featured_image_id)]))
+                link_count += 1
+
+        await session.flush()
+        logger.info("Saved {} variants with {} image links for product_id={}", variant_count, link_count, product.shopify_product_id)
 
     @staticmethod
     def _normalize_domain(domain_or_url: str) -> str:

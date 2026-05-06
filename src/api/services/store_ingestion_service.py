@@ -55,6 +55,18 @@ class StoreIngestionService:
 
         for product_payload in products:
             try:
+                has_nested = bool(
+                    product_payload.get("variants")
+                    or product_payload.get("images")
+                    or product_payload.get("options")
+                )
+                if not has_nested:
+                    self._logger.warning(
+                        "Product id={} title='{}' has NO variants/images/options in payload — related tables will be empty",
+                        product_payload.get("id"),
+                        product_payload.get("title", ""),
+                    )
+
                 await self._product_repository.upsert_product_from_shopify(
                     normalized_store.base_url,
                     product_payload,
@@ -113,5 +125,5 @@ class StoreIngestionService:
             raise ValueError("Unable to parse store domain from input")
 
         base_url = f"https://{domain}"
-        products_url = f"{base_url}/products.json"
+        products_url = f"{base_url}/products.json?limit=250"
         return NormalizedStore(domain=domain, base_url=base_url, products_url=products_url)

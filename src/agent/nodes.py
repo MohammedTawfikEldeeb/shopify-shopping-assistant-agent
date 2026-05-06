@@ -24,7 +24,7 @@ class SQLQueryInput(BaseModel):
 product_retriever_tool = StructuredTool.from_function(
     func=lambda query: "",
     name="product_retriever",
-    description="Search for products using semantic search. Use ONLY when the user wants to find NEW products. Provide a concise semantic search query.",
+    description="Search for products using semantic search. Always provide the query in English — if the user writes in another language (e.g. Arabic), translate their request to English first. Example: 'شنط رجالي' → 'men bags'. Use ONLY when the user wants to find NEW products.",
     args_schema=ProductRetrieverInput,
 )
 
@@ -40,37 +40,19 @@ TOOLS = [product_retriever_tool, sql_query_tool]
 
 def _build_context(summary: str, products: list[dict]) -> str:
     parts = []
-    if summary:
-        parts.append(f"Previous conversation summary: {summary}")
-
     if products:
-        lines = ["Previously found products:"]
-        for p in products:
-            extra = []
-            if p.get("price"):
-                extra.append(f"Price: ${p['price']}")
-            if p.get("link"):
-                extra.append(f"Link: {p['link']}")
-            if p.get("available_sizes"):
-                extra.append(f"Sizes: {', '.join(p['available_sizes'])}")
-            if p.get("available_colors"):
-                extra.append(f"Colors: {', '.join(p['available_colors'])}")
-            line = f"- {p['title']} (ID: {p['id']}"
-            if extra:
-                line += f", {', '.join(extra)}"
-            line += ")"
-            lines.append(line)
-        parts.append("\n".join(lines))
+        titles = [p['title'] for p in products if p.get('title')]
+        parts.append("Previous products: " + ", ".join(titles))
     else:
-        parts.append("No products have been found yet.")
+        parts.append("No products found yet.")
 
-    return "\n\n".join(parts)
+    return "\n".join(parts)
 
 
 def _format_products_plain(products: list[dict]) -> str:
     """Format product results as short plain text lines for the LLM."""
     if not products:
-        return "No products found matching the query."
+        return "No products found matching the query in this store's catalog. Tell the user that no matching products were found and offer to help with something else."
 
     lines = []
     for p in products:
@@ -176,14 +158,14 @@ async def tools_node(
 
         if name == "product_retriever":
             query = args.get("query", "")
-            found_products = await retriever.search(query)
+            found_products = await retriever.search(query, top_k=10)
 
-            # Only update product state when we actually found relevant products.
-            # If the search returned nothing (e.g. "laptops" in a clothing store),
-            # keep the previously found products intact.
             if found_products:
                 products = found_products
                 product_ids = [p["id"] for p in found_products]
+            else:
+                products = []
+                product_ids = []
 
             content = _format_products_plain(found_products)
             results.append(ToolMessage(content=content, tool_call_id=call_id))

@@ -8,7 +8,7 @@ from zenml import step
 from loguru import logger
 
 from src.config import settings
-from src.db.session import get_async_session_factory
+from src.db.session import create_async_session_factory
 from src.infrastructure.vectordb.providers.pgvector import PGVectorProvider
 from src.api.services.indexing_service import ProductIndexingService
 
@@ -22,7 +22,7 @@ def _extract_domain(store_url: str) -> str:
 
 async def _index(store_products: dict[str, list[dict]], ingest_result: dict) -> dict[str, Any]:
     """Create embeddings and insert into vector DB for all products."""
-    async_sf = get_async_session_factory(settings.postgres.async_url)
+    async_sf = create_async_session_factory(settings.postgres.async_url)
     vector_db = PGVectorProvider(
         db_client=async_sf,
         default_vector_size=384,
@@ -41,7 +41,7 @@ async def _index(store_products: dict[str, list[dict]], ingest_result: dict) -> 
             continue
         domain = _extract_domain(store_url)
         logger.info("Indexing {} products for store {}", len(products), domain)
-        result = await indexing_service.index_products(products, store_domain=domain)
+        result = await indexing_service.index_products(products)
         total_indexed += result.get("indexed_count", 0)
         total_skipped += result.get("skipped_count", 0)
         total_failed += result.get("failed_count", 0)

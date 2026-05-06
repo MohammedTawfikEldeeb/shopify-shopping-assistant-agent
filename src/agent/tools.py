@@ -1,8 +1,8 @@
 import asyncio
 import json
-import re
 from typing import Any
 
+import opik
 from loguru import logger
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import async_sessionmaker
@@ -16,32 +16,13 @@ from src.db.models import Product
 
 
 class ProductRetriever:
-    CANDIDATE_MULTIPLIER = 3
+    RETRIEVER_TOP_K = 20
 
     def __init__(self, vector_db: PGVectorProvider, async_session_factory: async_sessionmaker, *, use_reranker: bool = True):
         self.vector_db = vector_db
         self.collection_name = "product_vectors"
         self.async_session_factory = async_session_factory
         self.use_reranker = use_reranker
-
-    @staticmethod
-    def _product_matches_query(product: dict, query: str) -> bool:
-        title = product.get("title", "")
-        product_type = product.get("product_type", "")
-        tags = product.get("tags", [])
-
-        query_words = {w.lower() for w in re.findall(r"[a-zA-Z]{3,}", query)}
-        if not query_words:
-            return True
-
-        title_words = {w.lower() for w in re.findall(r"[a-zA-Z]{3,}", title)}
-        type_words = {w.lower() for w in re.findall(r"[a-zA-Z]{3,}", product_type or "")}
-        tag_words = set()
-        for tag in tags:
-            tag_words.update({w.lower() for w in re.findall(r"[a-zA-Z]{3,}", tag)})
-
-        all_words = title_words | type_words | tag_words
-        return bool(query_words & all_words)
 
     def _build_rerank_text(self, product: Product, meta: dict) -> str:
         parts = []
@@ -56,10 +37,11 @@ class ProductRetriever:
             parts.append(desc[:200])
         return " ".join(parts) if parts else product.title or ""
 
-    async def search(self, query: str, top_k: int = 10) -> list[dict[str, Any]]:
+    @opik.track(name="retriever.search", type="tool", tags=["retriever", "hakeem"])
+    async def search(self, query: str, top_k: int = 30) -> list[dict[str, Any]]:
         vector = await asyncio.to_thread(embed_query, query)
 
-        candidate_count = top_k * self.CANDIDATE_MULTIPLIER if self.use_reranker else top_k
+        candidate_count = self.RETRIEVER_TOP_K if self.use_reranker else top_k
         results = await self.vector_db.query(self.collection_name, vector, candidate_count)
         if not results:
             return []
@@ -158,8 +140,7 @@ class ProductRetriever:
                 "tags": meta.get("tags", []),
             })
 
-        filtered = [p for p in product_list if self._product_matches_query(p, query)]
-        return filtered if filtered else product_list
+        return product_list
 
 
 class SQLQueryTool:

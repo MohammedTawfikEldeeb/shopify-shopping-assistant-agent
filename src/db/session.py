@@ -43,6 +43,12 @@ def get_async_session_factory(url: str, **kwargs):
     return _async_session_factory
 
 
+def create_async_session_factory(url: str, **kwargs):
+    """Create a new async session factory without using cached engine (safe for new event loops)."""
+    engine = create_async_engine(url, **kwargs)
+    return async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+
 @contextmanager
 def get_session(session_factory) -> Session:
     """Sync context manager — kept only for Alembic / offline scripts."""
