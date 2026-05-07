@@ -12,107 +12,102 @@ class ValidationResult:
 
 class RetrievalValidator:
     """
-    Validates reranker score distributions to detect weak/irrelevant retrievals.
-
-    Cross-encoder scores (ms-marco-MiniLM-L-6-v2) are ranking logits, NOT
-    calibrated probabilities. They can look like [5.8, 2.8, 1.5, -1.4, -3.0]
-    even when nothing truly matches. This validator detects those patterns.
+    Validates reranker score distributions using relative/adaptive thresholds.
+    Works regardless of whether scores are in [-10, 0] or [0, 10] range.
     """
 
     def __init__(
         self,
-        min_top_score: float = 4.0,
-        strong_threshold: float = 3.0,
-        min_strong_count: int = 2,
-        min_dropoff_ratio: float = 0.4,
-        min_top_mean_gap: float = 1.5,
+        # Gap between top score and the "cliff" must be this fraction of total range
+        min_cliff_ratio: float = 0.3,
+        # Top cluster must be clearly separated from the rest
+        min_top_cluster_gap: float = 1.5,
+        # At least this many candidates in the "top cluster"
+        min_cluster_size: int = 1,
+        # Top score must beat the mean by at least this many std devs
+        min_zscore_top: float = 0.5,
     ):
-        self.min_top_score = min_top_score
-        self.strong_threshold = strong_threshold
-        self.min_strong_count = min_strong_count
-        self.min_dropoff_ratio = min_dropoff_ratio
-        self.min_top_mean_gap = min_top_mean_gap
+        self.min_cliff_ratio = min_cliff_ratio
+        self.min_top_cluster_gap = min_top_cluster_gap
+        self.min_cluster_size = min_cluster_size
+        self.min_zscore_top = min_zscore_top
+
+    def _find_top_cluster(self, sorted_scores: list[float]) -> list[float]:
+        """
+        Find the top cluster by detecting the largest gap between consecutive scores.
+        Everything before the biggest gap = top cluster.
+        """
+        if len(sorted_scores) < 2:
+            return sorted_scores
+
+        gaps = [
+            (sorted_scores[i] - sorted_scores[i + 1], i)
+            for i in range(len(sorted_scores) - 1)
+        ]
+        biggest_gap_idx = max(gaps, key=lambda x: x[0])[1]
+        return sorted_scores[: biggest_gap_idx + 1]
 
     def validate(self, scores: list[float], top_k: int = 10) -> ValidationResult:
-        """
-        scores: ALL reranker scores for candidates (before slicing to top_k).
-        top_k: how many the user asked for.
-        """
         if not scores:
-            return ValidationResult(
-                is_valid=False,
-                reason="No candidates scored.",
-                metrics={},
-            )
+            return ValidationResult(is_valid=False, reason="No candidates scored.", metrics={})
 
         if len(scores) < 2:
-            return ValidationResult(
-                is_valid=False,
-                reason="Only one candidate available.",
-                metrics={"count": 1},
-            )
+            return ValidationResult(is_valid=False, reason="Only one candidate.", metrics={"count": 1})
 
         sorted_scores = sorted(scores, reverse=True)
         top_score = sorted_scores[0]
-        bottom_score = sorted_scores[-1]
+        score_range = sorted_scores[0] - sorted_scores[-1]
         mean_score = statistics.mean(sorted_scores)
-        median_score = statistics.median(sorted_scores)
-        strong_count = sum(1 for s in sorted_scores if s >= self.strong_threshold)
-        top_k_scores = sorted_scores[:top_k]
-        avg_top_k = statistics.mean(top_k_scores)
-        score_range = top_score - bottom_score
-        dropoff_ratio = score_range / max(abs(mean_score), 0.1)
-        top_mean_gap = top_score - mean_score
-        std_dev = statistics.stdev(sorted_scores) if len(sorted_scores) > 1 else 0.0
+        std_dev = statistics.stdev(sorted_scores)
+
+        top_cluster = self._find_top_cluster(sorted_scores)
+        cluster_size = len(top_cluster)
+
+        # Gap between the bottom of the top cluster and the next score
+        cliff_gap = (
+            top_cluster[-1] - sorted_scores[cluster_size]
+            if cluster_size < len(sorted_scores)
+            else score_range
+        )
+        cliff_ratio = cliff_gap / max(score_range, 1e-6)
+
+        # Z-score of the top result
+        top_zscore = (top_score - mean_score) / max(std_dev, 1e-6)
 
         metrics = {
             "count": len(scores),
             "top_score": round(top_score, 4),
-            "bottom_score": round(bottom_score, 4),
+            "score_range": round(score_range, 4),
             "mean": round(mean_score, 4),
-            "median": round(median_score, 4),
             "std_dev": round(std_dev, 4),
-            "strong_count": strong_count,
-            "avg_top_k": round(avg_top_k, 4),
-            "dropoff_ratio": round(dropoff_ratio, 4),
-            "top_mean_gap": round(top_mean_gap, 4),
+            "top_cluster": [round(s, 4) for s in top_cluster],
+            "cluster_size": cluster_size,
+            "cliff_gap": round(cliff_gap, 4),
+            "cliff_ratio": round(cliff_ratio, 4),
+            "top_zscore": round(top_zscore, 4),
         }
 
         failures = []
 
-        # 1. Absolute threshold: the best score must be reasonably high
-        if top_score < self.min_top_score:
+        if cluster_size < self.min_cluster_size:
+            failures.append(f"top cluster too small ({cluster_size})")
+
+        if cliff_ratio < self.min_cliff_ratio:
             failures.append(
-                f"top score {top_score:.2f} < min {self.min_top_score}"
+                f"cliff ratio {cliff_ratio:.2f} < {self.min_cliff_ratio} (no clear separation)"
             )
 
-        # 2. Strong count: at least a few candidates look good
-        if strong_count < self.min_strong_count:
+        if cliff_gap < self.min_top_cluster_gap:
             failures.append(
-                f"only {strong_count} strong match(es) (need >= {self.min_strong_count})"
+                f"cliff gap {cliff_gap:.2f} < {self.min_top_cluster_gap} (top cluster not distinct)"
             )
 
-        # 3. Dropoff ratio: scores must spread out (not all similar noise)
-        if dropoff_ratio < self.min_dropoff_ratio:
+        if top_zscore < self.min_zscore_top:
             failures.append(
-                f"dropoff ratio {dropoff_ratio:.2f} < min {self.min_dropoff_ratio} (scores too similar)"
-            )
-
-        # 4. Top-mean gap: the winner must stand out from the pack
-        if top_mean_gap < self.min_top_mean_gap:
-            failures.append(
-                f"top-mean gap {top_mean_gap:.2f} < min {self.min_top_mean_gap} (no clear winner)"
+                f"top z-score {top_zscore:.2f} < {self.min_zscore_top} (top score not outstanding)"
             )
 
         if failures:
-            return ValidationResult(
-                is_valid=False,
-                reason="; ".join(failures),
-                metrics=metrics,
-            )
+            return ValidationResult(is_valid=False, reason="; ".join(failures), metrics=metrics)
 
-        return ValidationResult(
-            is_valid=True,
-            reason="Score distribution looks healthy.",
-            metrics=metrics,
-        )
+        return ValidationResult(is_valid=True, reason="Score distribution looks healthy.", metrics=metrics)

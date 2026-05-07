@@ -152,6 +152,48 @@ class ShoppingAgent:
 
         return "Sorry, I couldn't process that.", products, steps, product_sets, serialized_state
 
+    @opik.track(name="agent.stream_chat_with_session", type="general")
+    async def stream_chat_with_session(
+        self,
+        user_message: str,
+        session_state: dict | None = None,
+    ):
+        """Session-aware chat that streams events from LangGraph execution."""
+        if session_state is not None:
+            deserialized = _deserialize_state(session_state)
+            state = {
+                "messages": list(deserialized.get("messages", [])) + [HumanMessage(content=user_message)],
+                "summary": deserialized.get("summary", ""),
+                "products": deserialized.get("products", []),
+                "product_ids": deserialized.get("product_ids", []),
+                "steps": deserialized.get("steps", []),
+                "product_sets": deserialized.get("product_sets", []),
+            }
+        else:
+            state = {
+                "messages": [HumanMessage(content=user_message)],
+                "summary": "",
+                "products": [],
+                "product_ids": [],
+                "steps": [],
+                "product_sets": [],
+            }
+
+        config = {
+            "run_name": "agent.stream_chat_with_session",
+            "tags": ["hakeem", "shopping-agent"],
+        }
+        
+        # We need the final state to be updated and returned along with events.
+        # But astream_events yields events.
+        
+        async for event in self.graph.astream_events(state, version="v2", config=config):
+            yield event
+
+        # To get the final state, we can yield a special final event, or we can let the route re-fetch the state 
+        # or we could construct it. However, LangGraph v2 astream_events yields the final state in the `on_chain_end` event 
+        # for the main graph. We will handle that in the router.
+
     @property
     def memory(self):
         # Legacy property - not used in session mode

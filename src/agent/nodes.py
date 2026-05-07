@@ -85,7 +85,7 @@ async def _agent_llm_invoke(messages: list):
     """Traced LLM call. Input (messages) and output (response) are auto-captured by @opik.track."""
     llm = make_langchain_llm()
     llm_with_tools = llm.bind_tools(TOOLS)
-    response = await llm_with_tools.ainvoke(messages)
+    response = await llm_with_tools.ainvoke(messages, config={"tags": ["agent_llm"]})
     return response
 
 
@@ -93,7 +93,7 @@ async def _agent_llm_invoke(messages: list):
 async def _summarize_llm_invoke(messages: list):
     """Traced LLM call. Input (messages) and output (response) are auto-captured by @opik.track."""
     llm = make_langchain_llm()
-    response = await llm.ainvoke(messages)
+    response = await llm.ainvoke(messages, config={"tags": ["summarize_llm"]})
     return response
 
 

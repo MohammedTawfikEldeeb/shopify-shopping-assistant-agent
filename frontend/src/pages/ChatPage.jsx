@@ -57,32 +57,46 @@ function AssistantMessage({ text, animate }) {
   return <p className="text-body-md text-on-surface leading-relaxed">{displayed}</p>
 }
 
-function StepIndicator({ steps }) {
-  if (!steps || steps.length === 0) return null
+function CurrentStepIndicator({ steps, isGenerating }) {
+  if (!steps || steps.length === 0) return null;
 
-  const lastStep = steps[steps.length - 1]
-  const statusMap = {
-    searching: { icon: 'search', label: 'Searching products...' },
-    retrieved: { icon: 'database', label: `Found ${lastStep.candidates || ''} candidates` },
-    reranking: { icon: 'auto_awesome', label: 'Reranking for best matches...' },
-    done: { icon: 'check_circle', label: lastStep.found !== undefined ? `Found ${lastStep.found} products` : 'Done' },
-    running: { icon: 'query_stats', label: 'Querying details...' },
-    error: { icon: 'error', label: 'Something went wrong' },
+  // Get the most recent step
+  const currentStep = steps[steps.length - 1];
+  
+  let icon = 'build';
+  let label = currentStep.tool;
+  
+  if (currentStep.tool === 'product_retriever') {
+    icon = 'search';
+    label = currentStep.status === 'searching' ? 'Searching products...' : 'Retrieved products';
+  } else if (currentStep.tool === 'reranker') {
+    icon = 'auto_awesome';
+    label = currentStep.status === 'reranking' ? 'Reranking best matches...' : 'Reranked matches';
+  } else if (currentStep.tool === 'validator') {
+    icon = 'verified';
+    label = currentStep.status === 'done' ? 'Validated results' : 'Validating...';
+  } else if (currentStep.tool === 'sql_query') {
+    icon = 'query_stats';
+    label = currentStep.status === 'running' ? 'Querying database...' : 'Queried database';
   }
 
-  const status = statusMap[lastStep.status] || { icon: 'pending', label: 'Working...' }
+  const isDone = currentStep.status === 'done' || currentStep.status === 'error';
 
   return (
-    <div className="flex items-center gap-2 text-[11px] text-neutral-500 mt-1 animate-fadeIn">
-      <span className="material-symbols-outlined text-[14px] text-primary">{status.icon}</span>
-      <span>{status.label}</span>
+    <div className="flex items-center gap-2 mb-3 mt-1 ml-1 text-[13px] font-medium text-primary animate-pulse">
+      <span className="material-symbols-outlined text-[18px]">
+        {currentStep.status === 'error' ? 'error' : isDone ? 'check_circle' : icon}
+      </span>
+      <span>{label}</span>
     </div>
-  )
+  );
 }
 
-function TracePanel({ steps }) {
+function TracePanel({ steps, forceExpanded, hideToggle }) {
   const [expanded, setExpanded] = useState(false)
   if (!steps || steps.length === 0) return null
+
+  const isExpanded = forceExpanded || expanded;
 
   const getStepIcon = (tool) => {
     if (tool === 'product_retriever') return 'search'
@@ -107,17 +121,19 @@ function TracePanel({ steps }) {
 
   return (
     <div className="mt-2 border-t border-emerald-100 pt-2">
-      <button
-        onClick={() => setExpanded(!expanded)}
-        className="flex items-center gap-1.5 text-[10px] text-neutral-400 hover:text-neutral-600 transition-colors"
-      >
-        <span className="material-symbols-outlined text-[12px]">{expanded ? 'expand_less' : 'expand_more'}</span>
-        <span className="font-medium uppercase tracking-tighter">
-          {expanded ? 'Hide trace' : `Trace (${steps.length} steps)`}
-        </span>
-      </button>
+      {!hideToggle && (
+        <button
+          onClick={() => setExpanded(!expanded)}
+          className="flex items-center gap-1.5 text-[10px] text-neutral-400 hover:text-neutral-600 transition-colors"
+        >
+          <span className="material-symbols-outlined text-[12px]">{isExpanded ? 'expand_less' : 'expand_more'}</span>
+          <span className="font-medium uppercase tracking-tighter">
+            {isExpanded ? 'Hide trace' : `Trace (${steps.length} steps)`}
+          </span>
+        </button>
+      )}
 
-      {expanded && (
+      {isExpanded && (
         <div className="mt-2 space-y-2">
           {steps.map((step, i) => (
             <div key={i} className={`flex items-start gap-2 p-2 rounded-lg border ${getStepColor(step.status)}`}>
@@ -335,8 +351,12 @@ export default function ChatPage() {
     setMessages((prev) => [...prev, { role: 'user', text }])
     setLoading(true)
     setSteps([])
+    
+    const newMessageIndex = messages.length + 1; // Since we just appended user message
+    setMessages((prev) => [...prev, { role: 'assistant', text: '', steps: [] }])
+    
     try {
-      const res = await fetch(`${API_URL}/chat`, {
+      const response = await fetch(`${API_URL}/chat/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -345,27 +365,89 @@ export default function ChatPage() {
           session_id: sessionId,
         }),
       })
-      if (!res.ok) throw new Error('Failed to get response')
-      const data = await res.json()
-      setMessages((prev) => [...prev, { role: 'assistant', text: data.response, steps: data.steps }])
-
-      const sets = data.product_sets || []
-      setProductSets(sets)
-      if (sets.length > 0) {
-        const latestIndex = sets.length - 1
-        setCurrentSetIndex(latestIndex)
-        setProducts(sets[latestIndex])
-      } else if (data.products && data.products.length > 0) {
-        setProducts(data.products)
+      
+      if (!response.ok) throw new Error('Failed to get response')
+      
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder('utf-8');
+      
+      let done = false;
+      let assistantText = '';
+      
+      while (!done) {
+        const { value, done: readerDone } = await reader.read();
+        done = readerDone;
+        if (value) {
+          const chunkString = decoder.decode(value, { stream: true });
+          const lines = chunkString.split('\n');
+          
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              const dataStr = line.replace('data: ', '').trim();
+              if (!dataStr) continue;
+              
+              try {
+                const data = JSON.parse(dataStr);
+                
+                if (data.type === 'chunk') {
+                  assistantText += data.content;
+                  setMessages((prev) => {
+                    const newMessages = [...prev];
+                    newMessages[newMessages.length - 1].text = assistantText;
+                    return newMessages;
+                  });
+                } else if (data.type === 'steps_update') {
+                  setSteps(data.steps);
+                  setMessages((prev) => {
+                    const newMessages = [...prev];
+                    newMessages[newMessages.length - 1].steps = data.steps;
+                    return newMessages;
+                  });
+                } else if (data.type === 'step') {
+                  setSteps((prev) => {
+                    const newSteps = [...prev, data.step];
+                    setMessages((msgs) => {
+                      const newMsgs = [...msgs];
+                      newMsgs[newMsgs.length - 1].steps = newSteps;
+                      return newMsgs;
+                    });
+                    return newSteps;
+                  });
+                } else if (data.type === 'products') {
+                  const sets = data.product_sets || []
+                  setProductSets(sets)
+                  if (sets.length > 0) {
+                    const latestIndex = sets.length - 1
+                    setCurrentSetIndex(latestIndex)
+                    setProducts(sets[latestIndex])
+                  } else if (data.products && data.products.length > 0) {
+                    setProducts(data.products)
+                  }
+                } else if (data.type === 'error') {
+                   setMessages((prev) => {
+                    const newMessages = [...prev];
+                    newMessages[newMessages.length - 1].text += `\nError: ${data.message}`;
+                    return newMessages;
+                  });
+                } else if (data.type === 'done') {
+                  // Streaming finished
+                }
+              } catch (e) {
+                console.error("Error parsing SSE JSON:", e, dataStr);
+              }
+            }
+          }
+        }
       }
+      
     } catch (err) {
-      setMessages((prev) => [
-        ...prev,
-        { role: 'assistant', text: `Oops, something went wrong: ${err.message}` },
-      ])
+      setMessages((prev) => {
+        const newMessages = [...prev];
+        newMessages[newMessages.length - 1].text = `Oops, something went wrong: ${err.message}`;
+        return newMessages;
+      });
     } finally {
       setLoading(false)
-      setSteps([])
     }
   }
 
@@ -464,9 +546,19 @@ export default function ChatPage() {
                     <div className="h-8 w-8 rounded-full bg-emerald-50 shrink-0 flex items-center justify-center border border-emerald-100">
                       <span className="material-symbols-outlined text-primary-container text-[18px]">auto_awesome</span>
                     </div>
-                    <div className="bg-[#F0F8F5] p-4 rounded-2xl rounded-tl-none border border-emerald-50 shadow-sm max-w-[85%]">
-                      <AssistantMessage text={msg.text} animate={idx === messages.length - 1} />
-                      <TracePanel steps={msg.steps} />
+                      <div className="bg-[#F0F8F5] p-4 rounded-2xl rounded-tl-none border border-emerald-50 shadow-sm max-w-[85%] min-w-[200px]">
+                        {loading && idx === messages.length - 1 && msg.steps && msg.steps.length > 0 && (
+                           <CurrentStepIndicator steps={msg.steps} isGenerating={!!msg.text} />
+                        )}
+                        {(!msg.text && idx === messages.length - 1 && loading) ? (
+                            <div className="flex gap-2 mb-2 mt-1 ml-1">
+                              <span className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></span>
+                              <span className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></span>
+                              <span className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></span>
+                            </div>
+                        ) : (
+                            msg.text && <AssistantMessage text={msg.text} animate={false} />
+                        )}
                       <span className="text-[10px] text-neutral-400 mt-2 block font-medium uppercase tracking-tighter">
                         Assistant • {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </span>
@@ -487,39 +579,7 @@ export default function ChatPage() {
                 )}
               </div>
             ))}
-            {loading && (
-              <div className="flex gap-4 max-w-[90%] animate-slideInLeft">
-                <div className="h-8 w-8 rounded-full bg-emerald-50 shrink-0 flex items-center justify-center border border-emerald-100">
-                  <span className="material-symbols-outlined text-primary-container text-[18px]">auto_awesome</span>
-                </div>
-                <div className="bg-[#F0F8F5] p-4 rounded-2xl rounded-tl-none border border-emerald-50 shadow-sm max-w-[85%]">
-                  <div className="flex gap-2 mb-2">
-                    <span className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></span>
-                    <span className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></span>
-                    <span className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></span>
-                  </div>
-                  <StepIndicator steps={steps} />
-                  {steps.length > 0 && (
-                    <div className="mt-2 space-y-1.5">
-                      {steps.map((step, i) => (
-                        <div key={i} className="flex items-center gap-2 text-[10px] text-neutral-500">
-                          <span className="material-symbols-outlined text-[12px]">
-                            {step.status === 'done' ? 'check_circle' : step.status === 'error' ? 'error' : 'pending'}
-                          </span>
-                          <span className="capitalize">{step.tool.replace('_', ' ')}</span>
-                          <span className="opacity-60">{step.status}</span>
-                          {step.query && (
-                            <span className="opacity-40 truncate max-w-[200px]" title={step.query}>
-                              — {step.query}
-                            </span>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
+            {/* Old loading container removed since loading is rendered within the message itself */}
             <div ref={chatEndRef} />
           </div>
 
