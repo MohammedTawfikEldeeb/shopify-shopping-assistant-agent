@@ -162,6 +162,10 @@ class ProductRetriever:
             if not image and product.images:
                 image = product.images[0].src
 
+            product_images = [img.src for img in product.images] if product.images else []
+            if image and image not in product_images:
+                product_images.insert(0, image)
+
             product_list.append({
                 "id": str(product.id),
                 "title": product.title or "",
@@ -172,6 +176,7 @@ class ProductRetriever:
                 "handle": handle,
                 "link": link,
                 "image": image,
+                "images": product_images,
                 "price": price,
                 "available": meta.get("available"),
                 "available_sizes": meta.get("available_sizes", []),

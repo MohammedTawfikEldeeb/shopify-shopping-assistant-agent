@@ -54,7 +54,30 @@ function useTypewriter(text, speed = 12) {
 function AssistantMessage({ text, animate }) {
   const typed = useTypewriter(text, 10)
   const displayed = animate ? typed : text
-  return <p className="text-body-md text-on-surface leading-relaxed">{displayed}</p>
+
+  // Render markdown images ![alt](url)
+  const safeText = displayed || '';
+  const parts = safeText.split(/(!\[.*?\]\(.*?\))/g);
+
+  return (
+    <div className="text-body-md text-on-surface leading-relaxed space-y-2">
+      {parts.map((part, i) => {
+        const match = part.match(/!\[(.*?)\]\((.*?)\)/);
+        if (match) {
+          return (
+            <img 
+              key={i} 
+              src={match[2]} 
+              alt={match[1]} 
+              className="max-w-full rounded-xl border border-outline-variant/30 my-2 shadow-sm"
+              loading="lazy"
+            />
+          );
+        }
+        return <span key={i}>{part}</span>;
+      })}
+    </div>
+  )
 }
 
 function CurrentStepIndicator({ steps, isGenerating }) {
@@ -198,25 +221,6 @@ export default function ChatPage() {
   const [isLoadingLastSession, setIsLoadingLastSession] = useState(true)
   const chatEndRef = useRef(null)
 
-  // Create session on backend
-  useEffect(() => {
-    const createSession = async () => {
-      try {
-        await fetch(`${API_URL}/chat/sessions`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            user_id: userId,
-            session_id: sessionId,
-          }),
-        })
-      } catch (err) {
-        console.error('Failed to create session:', err)
-      }
-    }
-    createSession()
-  }, [sessionId, userId])
-
   // Load user's sessions
   const loadSessions = useCallback(async () => {
     try {
@@ -229,6 +233,26 @@ export default function ChatPage() {
       console.error('Failed to load sessions:', err)
     }
   }, [userId])
+
+  // Create session on backend
+  useEffect(() => {
+    const createSession = async () => {
+      try {
+        await fetch(`${API_URL}/chat/sessions`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            user_id: userId,
+            session_id: sessionId,
+          }),
+        })
+        loadSessions()
+      } catch (err) {
+        console.error('Failed to create session:', err)
+      }
+    }
+    createSession()
+  }, [sessionId, userId, loadSessions])
 
   useEffect(() => {
     loadSessions()
