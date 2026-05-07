@@ -60,6 +60,8 @@ class SemanticCacheSettings(BaseModel):
 class SearchSettings(BaseModel):
     use_reranker: bool = Field(default=True, description="Use cross-encoder reranker to improve search relevance")
     rerank_candidates_multiplier: int = Field(default=3, description="Over-fetch factor: fetch top_k * this many candidates before reranking")
+    use_hybrid_search: bool = Field(default=True, description="Combine vector + full-text search via RRF fusion")
+    hybrid_search_top_k: int = Field(default=20, description="How many candidates to fetch from each search mode before fusion")
 
 class CORSSettings(BaseModel):
     allowed_origins: list[str] = Field(

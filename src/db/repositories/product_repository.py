@@ -9,7 +9,7 @@ from typing import Any, Optional
 from urllib.parse import urlparse
 
 from loguru import logger
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from ..interfaces.base_repository import BaseRepository
@@ -74,6 +74,26 @@ class ProductRepository(BaseRepository[Product]):
         async with get_async_session(self.async_session_factory) as session:
             store = await session.scalar(select(Store).where(Store.domain == self._normalize_domain(domain)))
             return store.id if store else None
+
+    async def search_by_text(self, query: str, top_k: int = 20) -> list[tuple[int, float]]:
+        """Full-text search using PostgreSQL tsvector.
+
+        Returns list of (shopify_product_id, rank_score) ordered by relevance.
+        Uses 'simple' dictionary for language-agnostic tokenization.
+        """
+        sql = text("""
+            SELECT
+                shopify_product_id,
+                ts_rank_cd(search_vector, plainto_tsquery('simple', :query), 32) AS rank
+            FROM products
+            WHERE search_vector @@ plainto_tsquery('simple', :query)
+            ORDER BY rank DESC
+            LIMIT :limit
+        """)
+        async with get_async_session(self.async_session_factory) as session:
+            result = await session.execute(sql, {"query": query, "limit": top_k})
+            rows = result.fetchall()
+            return [(int(row.shopify_product_id), float(row.rank)) for row in rows]
 
     async def upsert_store_and_get_id(
         self,
