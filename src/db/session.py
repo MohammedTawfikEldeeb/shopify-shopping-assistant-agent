@@ -31,7 +31,10 @@ def get_sync_session_factory(url: str, **kwargs):
 def get_async_engine(url: str, **kwargs):
     global _async_engine
     if _async_engine is None:
-        _async_engine = create_async_engine(url, **kwargs)
+        connect_args = kwargs.pop("connect_args", {})
+        connect_args.setdefault("prepared_statement_cache_size", 0)
+        connect_args.setdefault("statement_cache_size", 0)
+        _async_engine = create_async_engine(url, connect_args=connect_args, **kwargs)
     return _async_engine
 
 
@@ -45,7 +48,11 @@ def get_async_session_factory(url: str, **kwargs):
 
 def create_async_session_factory(url: str, **kwargs):
     """Create a new async session factory without using cached engine (safe for new event loops)."""
-    engine = create_async_engine(url, **kwargs)
+    connect_args = {
+        "prepared_statement_cache_size": 0,
+        "statement_cache_size": 0,
+    }
+    engine = create_async_engine(url, connect_args=connect_args, **kwargs)
     return async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 

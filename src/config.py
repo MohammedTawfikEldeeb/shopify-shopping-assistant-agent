@@ -9,16 +9,17 @@ class PostgresSettings(BaseModel):
     database: str = Field(default="shopify_assistant")
     user: str = Field(default="shopify_user")
     password: str = Field(default="shopify_password")
+    sslmode: str = Field(default="require")
 
     @computed_field
     @property
     def url(self) -> str:
-        return f"postgresql://{self.user}:{self.password}@{self.host}:{self.port}/{self.database}"
+        return f"postgresql://{self.user}:{self.password}@{self.host}:{self.port}/{self.database}?sslmode={self.sslmode}"
 
     @computed_field
     @property
     def async_url(self) -> str:
-        return f"postgresql+asyncpg://{self.user}:{self.password}@{self.host}:{self.port}/{self.database}"
+        return f"postgresql+asyncpg://{self.user}:{self.password}@{self.host}:{self.port}/{self.database}?ssl={self.sslmode}"
 
 
 class QdrantSettings(BaseModel):
