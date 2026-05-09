@@ -40,10 +40,11 @@ class ProductRetriever:
         return " ".join(parts) if parts else product.title or ""
 
     @opik.track(name="retriever.search", type="tool", tags=["retriever", "hakeem"])
-    async def search(self, query: str, top_k: int = 30) -> dict[str, Any]:
+    async def search(self, query: str, original_query: str | None = None, top_k: int = 30) -> dict[str, Any]:
         steps = []
-        steps.append({"tool": "product_retriever", "status": "searching", "query": query})
+        steps.append({"tool": "product_retriever", "status": "searching", "query": query, "original_query": original_query})
 
+        rerank_query = original_query if original_query else query
         vector = await asyncio.to_thread(embed_query, query)
 
         candidate_count = self.RETRIEVER_TOP_K if self.use_reranker else top_k
@@ -98,7 +99,7 @@ class ProductRetriever:
                 rerank_docs.append(self._build_rerank_text(product, meta))
                 sid_order.append(sid)
 
-            ranked_indices, all_scores = await asyncio.to_thread(rerank, query, rerank_docs, top_k)
+            ranked_indices, all_scores = await asyncio.to_thread(rerank, rerank_query, rerank_docs, top_k)
 
             # Validate score distribution before accepting results
             validation = self.validator.validate(all_scores, top_k=top_k)
@@ -111,7 +112,7 @@ class ProductRetriever:
             })
             logger.info(
                 "Retrieval validation query={} valid={} reason='{}' metrics={}",
-                query,
+                rerank_query,
                 validation.is_valid,
                 validation.reason,
                 validation.metrics,

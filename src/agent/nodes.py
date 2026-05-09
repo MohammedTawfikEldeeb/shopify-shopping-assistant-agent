@@ -14,7 +14,8 @@ from src.agent.tools import ProductRetriever, SQLQueryTool
 
 
 class ProductRetrieverInput(BaseModel):
-    query: str = Field(description="Concise semantic search query for finding products")
+    query: str = Field(description="Clean product keywords for semantic search. Strip ALL filler words (find, me, I want, the, a, for, woman, men, kids, etc.) and keep ONLY the core product terms. Examples: user says 'woman t-shirt' → query='t-shirt'. user says 'find me a men bag' → query='bag'. user says 'شنط رجالي' → query='شنط'.")
+    original_query: str = Field(description="The user's EXACT original message. Used for reranking. Do NOT modify this. Examples: user says 'woman t-shirt' → original_query='woman t-shirt'. user says 'find me a men bag' → original_query='find me a men bag'.")
 
 
 class SQLQueryInput(BaseModel):
@@ -22,9 +23,9 @@ class SQLQueryInput(BaseModel):
 
 
 product_retriever_tool = StructuredTool.from_function(
-    func=lambda query: "",
+    func=lambda query, original_query: "",
     name="product_retriever",
-    description="Search for products using semantic search. Always provide the query in English — if the user writes in another language (e.g. Arabic), translate their request to English first. Example: 'شنط رجالي' → 'men bags'. Use ONLY when the user wants to find NEW products.",
+    description="Search for products using semantic search. You must provide TWO fields: 'query' = clean product keywords with ALL filler/modifier words removed (gender words like woman/men/kids, articles, request words); 'original_query' = the user's exact full message for reranking. The semantic search uses multilingual embeddings and works with all languages. Use ONLY when the user wants to find NEW products.",
     args_schema=ProductRetrieverInput,
 )
 
@@ -158,7 +159,8 @@ async def tools_node(
 
         if name == "product_retriever":
             query = args.get("query", "")
-            retriever_result = await retriever.search(query, top_k=10)
+            original_query = args.get("original_query", query)
+            retriever_result = await retriever.search(query, original_query=original_query, top_k=10)
             found_products = retriever_result.get("products", [])
             steps.extend(retriever_result.get("steps", []))
 
