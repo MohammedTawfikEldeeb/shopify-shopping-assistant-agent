@@ -79,7 +79,7 @@ export default function ProductCard({ product }) {
         </div>
         <div className="flex items-center justify-between pt-4 border-t-2 border-outline-variant/20">
           <span className="font-h2 text-h3 text-primary font-bold">
-            {price !== undefined && price !== null ? `$${Number(price).toFixed(2)}` : ''}
+            {price !== undefined && price !== null ? `${Number(price).toFixed(2)} EGP` : ''}
           </span>
           <span className="text-primary-container group-hover:text-primary transition-colors text-2xl">
             <span className="material-symbols-outlined">arrow_outward</span>

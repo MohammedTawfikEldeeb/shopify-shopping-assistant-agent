@@ -1,0 +1,115 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Job 1: Lint, type-check, and validate Python code
+  # ---------------------------------------------------------------------------
+  validate-python:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: latest
+
+      - name: Install dependencies
+        run: uv sync --no-dev
+
+      - name: Check Python syntax
+        run: |
+          uv run python -m py_compile src/config.py
+          uv run python -m py_compile src/api/main.py
+
+      - name: Verify requirements.txt is in sync
+        run: |
+          uv export --no-dev -o requirements.ci.txt
+          if ! diff -q requirements.txt requirements.ci.txt > /dev/null 2>&1; then
+            echo "Warning: requirements.txt is out of sync with pyproject.toml"
+            echo "Run 'uv export --no-dev -o requirements.txt' locally and commit the changes"
+            exit 1
+          fi
+
+      - name: Verify migrations are valid
+        env:
+          POSTGRES__HOST: ${{ secrets.POSTGRES__HOST }}
+          POSTGRES__PORT: ${{ secrets.POSTGRES__PORT }}
+          POSTGRES__DATABASE: ${{ secrets.POSTGRES__DATABASE }}
+          POSTGRES__USER: ${{ secrets.POSTGRES__USER }}
+          POSTGRES__PASSWORD: ${{ secrets.POSTGRES__PASSWORD }}
+          POSTGRES__SSLMODE: ${{ secrets.POSTGRES__SSLMODE }}
+        run: uv run alembic -c src/db/migration/alembic.ini check
+
+  # ---------------------------------------------------------------------------
+  # Job 2: Validate Docker image builds successfully
+  # ---------------------------------------------------------------------------
+  validate-docker:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: latest
+
+      - name: Export requirements.txt from lock file
+        run: uv export --no-dev -o requirements.txt
+
+      - name: Build Docker image (no push)
+        run: docker build -t shopify-assistant:test .
+
+      - name: Verify image exposes port 8000
+        run: |
+          PORT=$(docker inspect shopify-assistant:test --format='{{range $p, $_ := .Config.ExposedPorts}}{{$p}}{{end}}')
+          if [ "$PORT" != "8000/tcp" ]; then
+            echo "Expected port 8000/tcp to be exposed, got: $PORT"
+            exit 1
+          fi
+
+  # ---------------------------------------------------------------------------
+  # Job 3: Validate frontend build
+  # ---------------------------------------------------------------------------
+  validate-frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build
+
+      - name: Verify build output exists
+        working-directory: frontend
+        run: |
+          if [ ! -d "dist" ]; then
+            echo "Build output directory 'dist' not found"
+            exit 1
+          fi
+          echo "Frontend build verified: $(ls dist | wc -l) files"

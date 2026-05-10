@@ -733,7 +733,7 @@ export default function ChatPage() {
                       <p className="text-body-sm text-secondary line-clamp-1">{products[0].description || 'Premium product'}</p>
                     </div>
                     <div className="text-right">
-                      <p className="text-h3 font-bold text-on-surface">${products[0].price || '0.00'}</p>
+                      <p className="text-h3 font-bold text-on-surface">{products[0].price ? `${Number(products[0].price).toFixed(2)} EGP` : '0.00 EGP'}</p>
                       <span className="mt-2 flex items-center justify-center text-primary-container group-hover:text-primary transition-colors text-2xl">
                         <span className="material-symbols-outlined">arrow_outward</span>
                       </span>
@@ -764,7 +764,7 @@ export default function ChatPage() {
                       </p>
                       <h3 className="text-label-md font-bold text-on-surface truncate">{product.title}</h3>
                       <div className="flex items-center justify-between mt-3">
-                        <p className="text-body-md font-bold">${product.price || '0.00'}</p>
+                        <p className="text-body-md font-bold">{product.price ? `${Number(product.price).toFixed(2)} EGP` : '0.00 EGP'}</p>
                         <span className="text-primary-container group-hover:text-primary transition-colors text-2xl">
                           <span className="material-symbols-outlined">arrow_outward</span>
                         </span>
