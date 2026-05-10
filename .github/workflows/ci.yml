@@ -27,7 +27,7 @@ jobs:
           version: latest
 
       - name: Install dependencies
-        run: uv sync --no-dev
+        run: uv sync
 
       - name: Check Python syntax
         run: |
@@ -52,6 +52,24 @@ jobs:
           POSTGRES__PASSWORD: ${{ secrets.POSTGRES__PASSWORD }}
           POSTGRES__SSLMODE: ${{ secrets.POSTGRES__SSLMODE }}
         run: uv run alembic -c src/db/migration/alembic.ini check
+
+      - name: Run pytest
+        env:
+          POSTGRES__HOST: ${{ secrets.POSTGRES__HOST }}
+          POSTGRES__PORT: ${{ secrets.POSTGRES__PORT }}
+          POSTGRES__DATABASE: ${{ secrets.POSTGRES__DATABASE }}
+          POSTGRES__USER: ${{ secrets.POSTGRES__USER }}
+          POSTGRES__PASSWORD: ${{ secrets.POSTGRES__PASSWORD }}
+          POSTGRES__SSLMODE: ${{ secrets.POSTGRES__SSLMODE }}
+          OPENROUTER_API__KEY: ${{ secrets.OPENROUTER_API__KEY }}
+          GROQ_API__KEY: ${{ secrets.GROQ_API__KEY }}
+          LLM__PROVIDER: openrouter
+          LLM_MODEL__NAME: openai/gpt-oss-20b:nitro
+          OPIK__API_KEY: ${{ secrets.OPIK__API_KEY }}
+          OPIK__PROJECT_NAME: shopify-shopping-assistant-agent
+          SEARCH__USE_HYBRID_SEARCH: true
+          VECTOR_DB_PROVIDER: PGVECTOR
+        run: uv run pytest
 
   # ---------------------------------------------------------------------------
   # Job 2: Validate Docker image builds successfully

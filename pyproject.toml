@@ -33,3 +33,9 @@ dependencies = [
     "passlib>=1.7.4",
     "sentence-transformers>=3.0.0",
 ]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.24.0",
+]
