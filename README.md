@@ -20,7 +20,7 @@
 
 ## Overview
 
-**Shopify Shopping Assistant Agent** is a production-grade AI shopping concierge that intelligently searches, compares, and recommends products across **100+ Shopify stores in Egypt**. Built with a sophisticated **LangGraph agent architecture**, it combines **semantic vector search**, **cross-encoder reranking**, **adaptive retrieval validation**, and **real-time streaming** to deliver an unmatched multi-lingual shopping experience.
+**Shopify Shopping Assistant Agent** is a production-grade AI shopping concierge that intelligently searches, compares, and recommends products across **100+ Shopify stores in Egypt**. Built with a sophisticated **LangGraph agent architecture**, it combines **semantic vector search**, **cross-encoder reranking**, **score threshold filtering**, and **real-time streaming** to deliver an unmatched multi-lingual shopping experience.
 
 The system handles both **Arabic (Egyptian dialect)** and **English** queries, persists full conversation context across sessions in **Supabase PostgreSQL**, and leverages **ZenML Cloud** for automated weekly ingestion pipelines that keep the product catalog fresh.
 
@@ -35,7 +35,7 @@ The system handles both **Arabic (Egyptian dialect)** and **English** queries, p
 | **LangGraph Multi-Agent Architecture** | [![LangGraph](https://img.shields.io/badge/LangGraph-1C3C3C?style=flat-square&logo=langchain&logoColor=white)](https://langchain-ai.github.io/langgraph/) |
 | **Hybrid Search (Vector + Full-Text)** | [![Hybrid Search](https://img.shields.io/badge/Hybrid%20Search-PGVector%20%2B%20tsvector-336791?style=flat-square&logo=postgresql&logoColor=white)]() |
 | **Cross-Encoder Re-Ranking** | [![Sentence Transformers](https://img.shields.io/badge/Cross--Encoder-MS--MARCO--MiniLM-orange?style=flat-square&logo=pytorch&logoColor=white)]() |
-| **Adaptive Retrieval Validation** | [![Validation](https://img.shields.io/badge/Adaptive%20Validation-Z--Score%20%2B%20Clustering-blueviolet?style=flat-square)]() |
+| **Score Threshold Filtering** | [![Score Filter](https://img.shields.io/badge/Score%20Threshold--7.5%20Cutoff-blueviolet?style=flat-square)]() |
 | **Semantic Cache** | [![Semantic Cache](https://img.shields.io/badge/Semantic%20Cache-PGVector%20Cosine%200.92-FF6F00?style=flat-square)]() |
 | **Session Management & State Snapshots** | [![Session](https://img.shields.io/badge/Session%20Mgmt-PostgreSQL%20%2B%20Async-316192?style=flat-square&logo=postgresql&logoColor=white)]() |
 | **Streaming SSE Responses** | [![SSE](https://img.shields.io/badge/Streaming-SSE%20%2B%20Typewriter-00C853?style=flat-square)]() |
@@ -83,7 +83,6 @@ flowchart TB
         EMBED["FastEmbed<br/>paraphrase-multilingual-MiniLM"]
         PGV[PGVector<br/>384-dim Cosine]
         RERANK["Cross-Encoder<br/>MS-MARCO-MiniLM-L6"]
-        VALIDATE["Retrieval Validator<br/>Z-Score + Cluster Gap"]
         FTS[PostgreSQL FTS<br/>tsvector + GIN Index]
     end
 
@@ -125,7 +124,6 @@ flowchart TB
     TOOLS -->|semantic search| EMBED
     EMBED --> PGV
     PGV --> RERANK
-    RERANK --> VALIDATE
     TOOLS -->|sql_query| DB
     AGENT -->|chat| OR
     AGENT -->|chat| GROQ
@@ -263,19 +261,13 @@ PGVector Cosine Search → Top 20 Candidates
 Cross-Encoder (MS-MARCO-MiniLM-L6-v2) Re-Ranking
     |
     v
-Retrieval Validator (Z-Score + Cluster Gap Analysis)
+Score Threshold Filter (≥ -7.5)
     |
     v
 Top-K Products with Confidence Score
 ```
 
-**Retrieval Validator** uses adaptive thresholds:
-- **Z-Score Analysis**: Top score must beat mean by ≥0.5 std devs
-- **Cluster Gap Detection**: Largest gap between score clusters must be ≥1.5x
-- **Cliff Ratio**: Top cluster separation must be ≥30% of total score range
-- **Minimum Cluster Size**: At least 1 candidate in the top cluster
-
-This prevents hallucinated or irrelevant product matches.
+**Score Threshold Filter**: Any product with a reranker score below -7.5 is discarded. This eliminates noise while keeping well-scored relevant results.
 
 ### 3. Semantic Cache
 
@@ -343,7 +335,7 @@ Every LLM call, tool execution, and reranking operation is traced:
 
 Real-time streaming with **Server-Sent Events**:
 - **Typewriter Effect**: Characters appear one-by-one with 10ms delay
-- **Live Step Indicators**: Animated tool status (searching → reranking → validating → done)
+- **Live Step Indicators**: Animated tool status (searching → reranking → done)
 - **Trace Panel**: Expandable step-by-step execution log with icons
 - **Product Grid**: Animated cards with hover zoom, "Best Match" badge, direct checkout links
 - **Session Sidebar**: Create, switch, and delete sessions with persisted history
@@ -474,7 +466,6 @@ shopify-shopping-assistant-agent/
 │   └── utils/                     # Utilities
 │       ├── embedding_service.py   # FastEmbed singleton (multilingual MiniLM)
 │       ├── reranker_service.py    # Cross-encoder singleton (MS-MARCO)
-│       ├── retrieval_validator.py # Adaptive score distribution validator
 │       ├── product_search_processor.py  # HTML cleaning, material extraction, payload builder
 │       └── logger_util.py         # Loguru structured logging setup
 │

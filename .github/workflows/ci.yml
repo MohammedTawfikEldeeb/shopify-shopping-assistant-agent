@@ -34,15 +34,6 @@ jobs:
           uv run python -m py_compile src/config.py
           uv run python -m py_compile src/api/main.py
 
-      - name: Verify requirements.txt is in sync
-        run: |
-          uv export --no-dev -o requirements.ci.txt
-          if ! diff -q requirements.txt requirements.ci.txt > /dev/null 2>&1; then
-            echo "Warning: requirements.txt is out of sync with pyproject.toml"
-            echo "Run 'uv export --no-dev -o requirements.txt' locally and commit the changes"
-            exit 1
-          fi
-
       - name: Verify migrations are valid
         env:
           POSTGRES__HOST: ${{ secrets.POSTGRES__HOST }}

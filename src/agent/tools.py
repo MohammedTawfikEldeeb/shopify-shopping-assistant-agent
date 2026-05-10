@@ -10,7 +10,6 @@ from sqlalchemy.orm import selectinload
 
 from src.utils.embedding_service import embed_query
 from src.utils.reranker_service import rerank
-from src.utils.retrieval_validator import RetrievalValidator
 from src.infrastructure.vectordb.providers.pgvector import PGVectorProvider
 from src.db.session import get_async_session
 from src.db.models import Product
@@ -19,12 +18,12 @@ from src.db.models import Product
 class ProductRetriever:
     RETRIEVER_TOP_K = 20
 
-    def __init__(self, vector_db: PGVectorProvider, async_session_factory: async_sessionmaker, *, use_reranker: bool = True):
+    def __init__(self, vector_db: PGVectorProvider, async_session_factory: async_sessionmaker, *, use_reranker: bool = True, min_rerank_score: float = -7.5):
         self.vector_db = vector_db
         self.collection_name = "product_vectors"
         self.async_session_factory = async_session_factory
         self.use_reranker = use_reranker
-        self.validator = RetrievalValidator()
+        self.min_rerank_score = min_rerank_score
 
     def _build_rerank_text(self, product: Product, meta: dict) -> str:
         parts = []
@@ -101,34 +100,6 @@ class ProductRetriever:
 
             ranked_indices, all_scores = await asyncio.to_thread(rerank, rerank_query, rerank_docs, top_k)
 
-            # Validate score distribution before accepting results
-            validation = self.validator.validate(all_scores, top_k=top_k)
-            steps.append({
-                "tool": "validator",
-                "status": "done" if validation.is_valid else "rejected",
-                "valid": validation.is_valid,
-                "reason": validation.reason,
-                "metrics": validation.metrics,
-            })
-            logger.info(
-                "Retrieval validation query={} valid={} reason='{}' metrics={}",
-                rerank_query,
-                validation.is_valid,
-                validation.reason,
-                validation.metrics,
-            )
-
-            if not validation.is_valid:
-                steps.append({"tool": "product_retriever", "status": "done", "found": 0, "rejected": True})
-                return {
-                    "products": [],
-                    "steps": steps,
-                    "validation": {
-                        "valid": False,
-                        "reason": validation.reason,
-                    },
-                }
-
             ordered_products = []
             for idx, score in ranked_indices:
                 sid = sid_order[idx]
@@ -146,6 +117,13 @@ class ProductRetriever:
                 (p, m, None) for p, m in product_map.values()
             ]
             steps.append({"tool": "product_retriever", "status": "done", "found": len(ordered_products), "reranked": False})
+
+        if self.use_reranker and self.min_rerank_score is not None:
+            before = len(ordered_products)
+            ordered_products = [(p, m, s) for p, m, s in ordered_products if s is None or s >= self.min_rerank_score]
+            dropped = before - len(ordered_products)
+            if dropped:
+                logger.info("Dropped {} products below min_rerank_score={}", dropped, self.min_rerank_score)
 
         product_list = []
         for product, meta, score in ordered_products:
