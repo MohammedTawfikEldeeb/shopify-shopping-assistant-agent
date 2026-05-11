@@ -18,6 +18,10 @@
 
 ---
 
+## Demo
+
+![UI preview](static/image.png)
+
 ## Overview
 
 **Shopify Shopping Assistant Agent** is a production-grade AI shopping concierge that intelligently searches, compares, and recommends products across **100+ Shopify stores in Egypt**. Built with a sophisticated **LangGraph agent architecture**, it combines **semantic vector search**, **cross-encoder reranking**, **score threshold filtering**, and **real-time streaming** to deliver an unmatched multi-lingual shopping experience.
