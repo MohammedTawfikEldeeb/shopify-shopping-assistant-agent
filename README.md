@@ -4,7 +4,7 @@
 
 # **Shopify Shopping Assistant Agent**
 
-### *An Intelligent, Multi-Lingual AI Shopping Concierge for Egyptian E-Commerce*
+### *A production-grade, multilingual AI shopping concierge for Egyptian e-commerce*
 
 [![Python](https://img.shields.io/badge/Python-3.13-blue?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
@@ -18,15 +18,49 @@
 
 ---
 
+## Why This Project Stands Out
+
+This project is not a toy chatbot wrapped in a pretty UI. It is an end-to-end AI product system built to solve a real commerce problem: helping users search across fragmented Shopify catalogs in natural language, in both **Arabic and English**, with **fast retrieval**, **stateful conversations**, and **production deployment on AWS**.
+
+What makes it compelling to a recruiter or engineering lead:
+
+- It solves a real market problem for **Egyptian e-commerce**, not a generic benchmark demo.
+- It combines **LLM orchestration**, **retrieval**, **ranking**, **streaming UX**, **persistent session state**, and **cloud deployment** in one cohesive system.
+- It shows strong full-stack range: **React + Vite frontend**, **FastAPI backend**, **LangGraph agent design**, **PostgreSQL/PGVector retrieval**, **ZenML ingestion pipelines**, and **AWS ECS Fargate deployment**.
+- It demonstrates engineering tradeoffs that matter in production: health checks, ALB routing, CORS, config hardening, CI/CD scope control, and startup resilience.
+
+## What It Does
+
+**Shopify Shopping Assistant Agent** is a production-grade AI shopping concierge that searches, compares, and recommends products across **100+ Shopify stores in Egypt**.
+
+It uses a **LangGraph agent** with tool calling to:
+
+- understand shopping intent in Arabic or English
+- retrieve relevant products with **vector search + PostgreSQL full-text search**
+- rerank results with a **cross-encoder**
+- answer follow-up questions using **session memory and SQL lookups**
+- stream responses back to the user in a chat-first interface
+
+The system persists conversation context in **Supabase PostgreSQL**, stores embeddings in **PGVector**, runs recurring ingestion through **ZenML**, serves the API via **FastAPI on ECS Fargate**, and ships the frontend separately via **Vercel**.
+
 ## Demo
 
 ![UI preview](static/image.png)
 
-## Overview
+## Engineering Highlights
 
-**Shopify Shopping Assistant Agent** is a production-grade AI shopping concierge that intelligently searches, compares, and recommends products across **100+ Shopify stores in Egypt**. Built with a sophisticated **LangGraph agent architecture**, it combines **semantic vector search**, **cross-encoder reranking**, **score threshold filtering**, and **real-time streaming** to deliver an unmatched multi-lingual shopping experience.
+| Area | What This Project Demonstrates |
+|------|-------------------------------|
+| **AI Engineering** | LangGraph agent loops, tool calling, multilingual retrieval, reranking, semantic caching |
+| **Backend Engineering** | FastAPI, async SQLAlchemy, Pydantic settings, SSE streaming, session persistence |
+| **Search / Data** | PGVector, PostgreSQL FTS, hybrid ranking, ingestion/indexing pipelines |
+| **Frontend Engineering** | React chat UX, streaming UI, session sidebar, product rendering |
+| **Cloud / DevOps** | Docker, ECR, ECS Fargate, ALB, GitHub Actions, environment-driven deploys |
+| **Production Thinking** | Health checks, structured logging, observability, CORS handling, deployment debugging |
 
-The system handles both **Arabic (Egyptian dialect)** and **English** queries, persists full conversation context across sessions in **Supabase PostgreSQL**, and leverages **ZenML Cloud** for automated weekly ingestion pipelines that keep the product catalog fresh.
+## Architecture In One Paragraph
+
+The frontend sends chat requests to a FastAPI service that routes them into a LangGraph-based shopping agent. That agent decides when to search products semantically, when to rerank candidates, and when to query relational product details directly from PostgreSQL. Results are streamed back to the UI while session state, chat history, and snapshots are persisted for continuity. A separate ZenML pipeline refreshes product data from Shopify stores and reindexes embeddings into PGVector on a schedule.
 
 ---
 
@@ -729,7 +763,6 @@ python -m pipelines.run --schedule
 
 ### AWS ECS Fargate
 
-See the full step-by-step guide: [docs/AWS_DEPLOYMENT.md](docs/AWS_DEPLOYMENT.md)
 
 **Quick summary:**
 1. Create IAM user with ECR + ECS permissions
