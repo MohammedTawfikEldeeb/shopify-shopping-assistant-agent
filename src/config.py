@@ -1,6 +1,9 @@
-from pydantic import BaseModel, Field, computed_field
-from pydantic_settings import BaseSettings, SettingsConfigDict
+import json
+from typing import Annotated
 from typing import ClassVar
+
+from pydantic import BaseModel, Field, computed_field, field_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class PostgresSettings(BaseModel):
@@ -65,10 +68,34 @@ class SearchSettings(BaseModel):
     hybrid_search_top_k: int = Field(default=20, description="How many candidates to fetch from each search mode before fusion")
 
 class CORSSettings(BaseModel):
-    allowed_origins: list[str] = Field(
+    allowed_origins: Annotated[list[str], NoDecode] = Field(
         default=["*"],
         description="List of allowed CORS origins. Use ['*'] for dev, specific domains for production.",
     )
+
+    @field_validator("allowed_origins", mode="before")
+    @classmethod
+    def parse_allowed_origins(cls, value):
+        if value is None:
+            return ["*"]
+        if isinstance(value, list):
+            return value
+        if isinstance(value, str):
+            stripped = value.strip()
+            if not stripped:
+                return ["*"]
+            if stripped == "*":
+                return ["*"]
+            if stripped.startswith("["):
+                try:
+                    parsed = json.loads(stripped)
+                except json.JSONDecodeError:
+                    pass
+                else:
+                    if isinstance(parsed, list):
+                        return [str(item).strip() for item in parsed if str(item).strip()]
+            return [item.strip() for item in stripped.split(",") if item.strip()]
+        return value
 
 class Settings(BaseSettings):
     vector_db_provider: str = Field(default="PGVECTOR")

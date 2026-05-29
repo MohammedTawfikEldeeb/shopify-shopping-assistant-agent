@@ -48,8 +48,11 @@ async def lifespan(app: FastAPI):
         distance_method="cosine",
     )
 
-    # Connect PGVector provider (create vector extension if needed)
-    await shared_vector_db.connect()
+    # Try to initialize PGVector support, but don't crash the API if setup fails.
+    try:
+        await shared_vector_db.connect()
+    except Exception as exc:
+        logger.warning("PGVector startup initialization failed: {}", exc)
 
     # Register PGVector provider in factory
     vector_db_factory.register(VectorDBEnums.PGVector, shared_vector_db)
@@ -93,15 +96,21 @@ async def lifespan(app: FastAPI):
     )
     logger.info("Shopping agent initialized")
 
-    # Warm up embedding model
-    logger.info("Warming up embedding model...")
-    embed_query("warmup")
-    logger.info("Embedding model ready")
+    # Warm the embedding model eagerly when possible, but keep startup resilient.
+    try:
+        logger.info("Warming up embedding model...")
+        embed_query("warmup")
+        logger.info("Embedding model ready")
+    except Exception as exc:
+        logger.warning("Embedding warmup skipped due to startup error: {}", exc)
 
     if settings.search.use_reranker:
-        logger.info("Warming up reranker model...")
-        warmup_reranker()
-        logger.info("Reranker model ready")
+        try:
+            logger.info("Warming up reranker model...")
+            warmup_reranker()
+            logger.info("Reranker model ready")
+        except Exception as exc:
+            logger.warning("Reranker warmup skipped due to startup error: {}", exc)
 
     logger.info("API startup complete — chat-only mode (indexing via ZenML pipeline)")
 
