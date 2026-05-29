@@ -12,6 +12,22 @@ jobs:
   # ---------------------------------------------------------------------------
   validate-python:
     runs-on: ubuntu-latest
+    
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: shopify_assistant
+          POSTGRES_USER: shopify_user
+          POSTGRES_PASSWORD: shopify_password
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+    
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -36,22 +52,22 @@ jobs:
 
       - name: Verify migrations are valid
         env:
-          POSTGRES__HOST: ${{ secrets.POSTGRES__HOST }}
-          POSTGRES__PORT: ${{ secrets.POSTGRES__PORT }}
-          POSTGRES__DATABASE: ${{ secrets.POSTGRES__DATABASE }}
-          POSTGRES__USER: ${{ secrets.POSTGRES__USER }}
-          POSTGRES__PASSWORD: ${{ secrets.POSTGRES__PASSWORD }}
-          POSTGRES__SSLMODE: ${{ secrets.POSTGRES__SSLMODE }}
+          POSTGRES__HOST: localhost
+          POSTGRES__PORT: 5432
+          POSTGRES__DATABASE: shopify_assistant
+          POSTGRES__USER: shopify_user
+          POSTGRES__PASSWORD: shopify_password
+          POSTGRES__SSLMODE: disable
         run: uv run alembic -c src/db/migration/alembic.ini check
 
       - name: Run pytest
         env:
-          POSTGRES__HOST: ${{ secrets.POSTGRES__HOST }}
-          POSTGRES__PORT: ${{ secrets.POSTGRES__PORT }}
-          POSTGRES__DATABASE: ${{ secrets.POSTGRES__DATABASE }}
-          POSTGRES__USER: ${{ secrets.POSTGRES__USER }}
-          POSTGRES__PASSWORD: ${{ secrets.POSTGRES__PASSWORD }}
-          POSTGRES__SSLMODE: ${{ secrets.POSTGRES__SSLMODE }}
+          POSTGRES__HOST: localhost
+          POSTGRES__PORT: 5432
+          POSTGRES__DATABASE: shopify_assistant
+          POSTGRES__USER: shopify_user
+          POSTGRES__PASSWORD: shopify_password
+          POSTGRES__SSLMODE: disable
           OPENROUTER_API__KEY: ${{ secrets.OPENROUTER_API__KEY }}
           GROQ_API__KEY: ${{ secrets.GROQ_API__KEY }}
           LLM__PROVIDER: openrouter
