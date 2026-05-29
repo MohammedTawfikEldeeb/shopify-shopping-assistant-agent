@@ -51,31 +51,97 @@ function useTypewriter(text, speed = 12) {
   return displayed
 }
 
+function ImageGrid({ images }) {
+  const [selected, setSelected] = useState(null)
+
+  return (
+    <>
+      <div className={`grid gap-2 my-3 ${
+        images.length === 1 ? 'grid-cols-1 max-w-[280px]' :
+        images.length === 2 ? 'grid-cols-2' :
+        images.length <= 4 ? 'grid-cols-2' :
+        'grid-cols-3'
+      }`}>
+        {images.map((img, i) => (
+          <button
+            key={i}
+            onClick={() => setSelected(img)}
+            className="group relative aspect-square rounded-xl overflow-hidden border border-neutral-200 bg-neutral-50 shadow-sm hover:shadow-lg hover:border-primary/40 transition-all duration-300 cursor-pointer"
+            style={{ animation: `fadeIn 0.3s ease-out ${i * 80}ms forwards`, opacity: 0 }}
+          >
+            <img
+              src={img.url}
+              alt={img.alt || `Product image ${i + 1}`}
+              className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
+              loading="lazy"
+            />
+            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-300" />
+            <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/40 to-transparent p-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+              <span className="material-symbols-outlined text-white text-[16px]">zoom_in</span>
+            </div>
+          </button>
+        ))}
+      </div>
+
+      {selected && (
+        <div
+          className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-8 animate-fadeIn cursor-pointer"
+          onClick={() => setSelected(null)}
+        >
+          <button
+            onClick={() => setSelected(null)}
+            className="absolute top-6 right-6 text-white/80 hover:text-white transition-colors"
+          >
+            <span className="material-symbols-outlined text-[32px]">close</span>
+          </button>
+          <img
+            src={selected.url}
+            alt={selected.alt || 'Product image'}
+            className="max-w-full max-h-[85vh] object-contain rounded-xl shadow-2xl"
+          />
+        </div>
+      )}
+    </>
+  )
+}
+
 function AssistantMessage({ text, animate }) {
   const typed = useTypewriter(text, 10)
   const displayed = animate ? typed : text
+  const safeText = displayed || ''
 
-  // Render markdown images ![alt](url)
-  const safeText = displayed || '';
-  const parts = safeText.split(/(!\[.*?\]\(.*?\))/g);
+  const IMAGE_URL_RE = /https?:\/\/[^\s<>"')]+\.(?:jpg|jpeg|png|webp|gif|avif)(?:\?[^\s<>"')]*)?/gi
+  const MD_IMAGE_RE = /!\[(.*?)\]\((https?:\/\/[^\s)]+)\)/g
+
+  const imageUrls = new Set()
+  const images = []
+
+  let m
+  while ((m = MD_IMAGE_RE.exec(safeText)) !== null) {
+    if (!imageUrls.has(m[2])) {
+      imageUrls.add(m[2])
+      images.push({ url: m[2], alt: m[1] })
+    }
+  }
+
+  const plainText = safeText.replace(MD_IMAGE_RE, '')
+  while ((m = IMAGE_URL_RE.exec(plainText)) !== null) {
+    if (!imageUrls.has(m[0])) {
+      imageUrls.add(m[0])
+      images.push({ url: m[0], alt: '' })
+    }
+  }
+
+  let cleanText = safeText
+    .replace(MD_IMAGE_RE, '')
+    .replace(IMAGE_URL_RE, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim()
 
   return (
-    <div className="text-body-md text-on-surface leading-relaxed space-y-2">
-      {parts.map((part, i) => {
-        const match = part.match(/!\[(.*?)\]\((.*?)\)/);
-        if (match) {
-          return (
-            <img 
-              key={i} 
-              src={match[2]} 
-              alt={match[1]} 
-              className="max-w-full rounded-xl border border-outline-variant/30 my-2 shadow-sm"
-              loading="lazy"
-            />
-          );
-        }
-        return <span key={i}>{part}</span>;
-      })}
+    <div className="text-body-md text-on-surface leading-relaxed">
+      {cleanText && <p className="whitespace-pre-wrap">{cleanText}</p>}
+      {images.length > 0 && <ImageGrid images={images} />}
     </div>
   )
 }

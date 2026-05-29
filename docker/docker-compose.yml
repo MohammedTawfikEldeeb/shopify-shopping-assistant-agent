@@ -1,0 +1,19 @@
+services:
+  pgvector:
+    image: pgvector/pgvector:pg16
+    container_name: shopify_assistant_postgres
+    restart: unless-stopped
+    env_file:
+      - ../.env
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgvector_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U shopify_user -d shopify_assistant"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgvector_data:

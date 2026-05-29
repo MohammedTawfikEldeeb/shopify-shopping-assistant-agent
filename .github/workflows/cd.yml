@@ -10,11 +10,12 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  GCP_REGION: ${{ secrets.GCP_REGION }}
-  GCP_PROJECT: ${{ secrets.GCP_PROJECT_ID }}
-  GAR_REPOSITORY: shopify-assistant
-  SERVICE_NAME: shopify-assistant-api
-  IMAGE: ${{ secrets.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/shopify-assistant/backend
+  AWS_REGION: ${{ secrets.AWS_REGION }}
+  ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
+  ECS_CLUSTER: ${{ secrets.ECS_CLUSTER }}
+  ECS_SERVICE: ${{ secrets.ECS_SERVICE }}
+  ECS_TASK_DEFINITION: .aws/task-definition.json
+  CONTAINER_NAME: shopify-assistant
 
 jobs:
 
@@ -32,7 +33,7 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.13"
 
       - name: Install uv
         uses: astral-sh/setup-uv@v4
@@ -40,15 +41,27 @@ jobs:
           version: latest
 
       - name: Install dependencies
-        run: |
-          uv sync --no-dev
+        run: uv sync --no-dev
 
       - name: Run tests
-        run: |
-          pytest
+        env:
+          POSTGRES__HOST: ${{ secrets.POSTGRES__HOST }}
+          POSTGRES__PORT: ${{ secrets.POSTGRES__PORT }}
+          POSTGRES__DATABASE: ${{ secrets.POSTGRES__DATABASE }}
+          POSTGRES__USER: ${{ secrets.POSTGRES__USER }}
+          POSTGRES__PASSWORD: ${{ secrets.POSTGRES__PASSWORD }}
+          POSTGRES__SSLMODE: ${{ secrets.POSTGRES__SSLMODE }}
+          OPENROUTER_API__KEY: ${{ secrets.OPENROUTER_API__KEY }}
+          GROQ_API__KEY: ${{ secrets.GROQ_API__KEY }}
+          LLM__PROVIDER: ${{ secrets.LLM__PROVIDER }}
+          LLM_MODEL__NAME: ${{ secrets.LLM_MODEL__NAME }}
+          OPIK__API_KEY: ${{ secrets.OPIK__API_KEY }}
+          OPIK__PROJECT_NAME: ${{ secrets.OPIK__PROJECT_NAME }}
+          VECTOR_DB_PROVIDER: PGVECTOR
+        run: uv run pytest
 
   # ===========================================================================
-  # JOB 2 — Build and Push Docker Image
+  # JOB 2 — Build and Push Docker Image to ECR
   # ===========================================================================
   build-and-push:
     runs-on: ubuntu-latest
@@ -66,81 +79,41 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # -----------------------------------------------------------------------
-      # Authenticate to Google Cloud
-      # Recommended: Workload Identity Federation
-      # -----------------------------------------------------------------------
-      - name: Authenticate to Google Cloud
-        uses: google-github-actions/auth@v2
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          credentials_json: ${{ secrets.GCP_SA_KEY }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
 
-      - name: Setup gcloud CLI
-        uses: google-github-actions/setup-gcloud@v2
-        with:
-          project_id: ${{ secrets.GCP_PROJECT_ID }}
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
 
-      # -----------------------------------------------------------------------
-      # Ensure Artifact Registry repository exists
-      # -----------------------------------------------------------------------
-      - name: Create Artifact Registry repository if missing
-        run: |
-          gcloud artifacts repositories describe $GAR_REPOSITORY \
-            --location=$GCP_REGION \
-            >/dev/null 2>&1 || \
-          gcloud artifacts repositories create $GAR_REPOSITORY \
-            --repository-format=docker \
-            --location=$GCP_REGION \
-            --description="Docker repository"
-
-      # -----------------------------------------------------------------------
-      # Configure Docker Authentication
-      # -----------------------------------------------------------------------
-      - name: Configure Docker
-        run: |
-          gcloud auth configure-docker \
-            ${{ secrets.GCP_REGION }}-docker.pkg.dev \
-            --quiet
-
-      # -----------------------------------------------------------------------
-      # Setup Docker Buildx
-      # -----------------------------------------------------------------------
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # -----------------------------------------------------------------------
-      # Install uv
-      # -----------------------------------------------------------------------
       - name: Install uv
         uses: astral-sh/setup-uv@v4
         with:
           version: latest
 
-      # -----------------------------------------------------------------------
-      # Export requirements.txt
-      # -----------------------------------------------------------------------
       - name: Export requirements.txt
-        run: |
-          uv export --no-dev -o requirements.txt
+        run: uv export --no-dev -o requirements.txt
 
-      # -----------------------------------------------------------------------
-      # Build and Push Docker Image with Cache
-      # -----------------------------------------------------------------------
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
         with:
           context: .
           push: true
-
           tags: |
-            ${{ env.IMAGE }}:${{ github.sha }}
-            ${{ env.IMAGE }}:latest
-
+            ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+            ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
   # ===========================================================================
-  # JOB 3 — Deploy to Cloud Run
+  # JOB 3 — Deploy to ECS Fargate
   # ===========================================================================
   deploy-api:
     runs-on: ubuntu-latest
@@ -152,50 +125,66 @@ jobs:
       id-token: write
 
     steps:
-      - name: Authenticate to Google Cloud
-        uses: google-github-actions/auth@v2
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          credentials_json: ${{ secrets.GCP_SA_KEY }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
 
-      - name: Setup gcloud CLI
-        uses: google-github-actions/setup-gcloud@v2
+      - name: Get AWS Account ID
+        id: get-account-id
+        run: |
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          echo "account_id=$ACCOUNT_ID" >> $GITHUB_OUTPUT
+
+      - name: Inject AWS Account ID into task definition
+        run: |
+          sed -i "s/AWS_ACCOUNT_ID/${{ steps.get-account-id.outputs.account_id }}/g" ${{ env.ECS_TASK_DEFINITION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Fill in the new image ID in the task definition
+        id: task-def
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
         with:
-          project_id: ${{ secrets.GCP_PROJECT_ID }}
+          task-definition: ${{ env.ECS_TASK_DEFINITION }}
+          container-name: ${{ env.CONTAINER_NAME }}
+          image: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ needs.build-and-push.outputs.image_tag }}
+          environment-variables: |
+            POSTGRES__HOST=${{ secrets.POSTGRES__HOST }}
+            POSTGRES__PORT=${{ secrets.POSTGRES__PORT }}
+            POSTGRES__DATABASE=${{ secrets.POSTGRES__DATABASE }}
+            POSTGRES__USER=${{ secrets.POSTGRES__USER }}
+            POSTGRES__PASSWORD=${{ secrets.POSTGRES__PASSWORD }}
+            POSTGRES__SSLMODE=${{ secrets.POSTGRES__SSLMODE }}
+            OPENROUTER_API__KEY=${{ secrets.OPENROUTER_API__KEY }}
+            GROQ_API__KEY=${{ secrets.GROQ_API__KEY }}
+            LLM__PROVIDER=${{ secrets.LLM__PROVIDER }}
+            LLM_MODEL__NAME=${{ secrets.LLM_MODEL__NAME }}
+            OPIK__API_KEY=${{ secrets.OPIK__API_KEY }}
+            OPIK__PROJECT_NAME=${{ secrets.OPIK__PROJECT_NAME }}
+            CORS__ALLOWED_ORIGINS=${{ secrets.CORS__ALLOWED_ORIGINS }}
+            VECTOR_DB_PROVIDER=PGVECTOR
 
-      # -----------------------------------------------------------------------
-      # Deploy to Cloud Run
-      # -----------------------------------------------------------------------
-      - name: Deploy API
+      - name: Deploy to ECS
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ steps.task-def.outputs.task-definition }}
+          service: ${{ env.ECS_SERVICE }}
+          cluster: ${{ env.ECS_CLUSTER }}
+          wait-for-service-stability: true
+
+      - name: Verify deployment
         run: |
-          gcloud run deploy $SERVICE_NAME \
-            --image ${{ env.IMAGE }}:${{ needs.build-and-push.outputs.image_tag }} \
-            --region $GCP_REGION \
-            --platform managed \
-            --allow-unauthenticated \
-            --quiet
-
-      # -----------------------------------------------------------------------
-      # Verify Deployment Health with Retries
-      # -----------------------------------------------------------------------
-      - name: Verify deployment health
-        run: |
-          URL=$(gcloud run services describe $SERVICE_NAME \
-            --region=$GCP_REGION \
-            --format='value(status.url)')
-
-          echo "Service URL: $URL"
-
-          for i in {1..10}; do
-            STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$URL/health")
-
-            if [ "$STATUS" = "200" ]; then
-              echo "Health check passed"
-              exit 0
-            fi
-
-            echo "Attempt $i failed with status $STATUS"
-            sleep 10
-          done
-
-          echo "Deployment health check failed"
-          exit 1
+          echo "Deployment complete. Checking service status..."
+          aws ecs describe-services \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services ${{ env.ECS_SERVICE }} \
+            --query 'services[0].{status:status,runningCount:runningCount,desiredCount:desiredCount}' \
+            --output table

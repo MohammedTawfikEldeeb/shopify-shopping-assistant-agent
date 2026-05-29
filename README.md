@@ -10,7 +10,7 @@
 [![FastAPI](https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
 [![React](https://img.shields.io/badge/React-20232A?style=for-the-badge&logo=react&logoColor=61DAFB)](https://react.dev/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-316192?style=for-the-badge&logo=postgresql&logoColor=white)](https://www.postgresql.org/)
-[![Google Cloud](https://img.shields.io/badge/Google_Cloud-4285F4?style=for-the-badge&logo=google-cloud&logoColor=white)](https://cloud.google.com/)
+[![AWS](https://img.shields.io/badge/AWS-ECS%20Fargate-FF9900?style=for-the-badge&logo=amazon-aws&logoColor=white)](https://aws.amazon.com/)
 [![Supabase](https://img.shields.io/badge/Supabase-3ECF8E?style=for-the-badge&logo=supabase&logoColor=white)](https://supabase.com/)
 [![ZenML](https://img.shields.io/badge/ZenML-2B2B2B?style=for-the-badge&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHBhdGggZD0iTTEyIDJMNCA3djEwbDggNSA4LTVWN0wxMiAyem0wIDIuMThMNyA3LjgybDUgMy4xMiA1LTMuMTJMMTIgNC4xOHptLTYgNS4xM2w1IDMuMTJ2Ni4zN2wtNS0zLjEyVjkuMzF6bTEyIDB2Ni4zN2wtNSAzLjEyVjEyLjQzbDUtMy4xMnoiIGZpbGw9IndoaXRlIi8+PC9zdmc+&logoColor=white)](https://zenml.io/)
 
@@ -47,7 +47,7 @@ The system handles both **Arabic (Egyptian dialect)** and **English** queries, p
 | **100+ Store Ingestion Pipeline** | [![ZenML](https://img.shields.io/badge/ZenML%20Cloud-Weekly%20Schedule-2B2B2B?style=flat-square)]() |
 | **Prompt Versioning & Observability** | [![Opik](https://img.shields.io/badge/Opik%20%2B%20LangSmith-Observability-FF6D00?style=flat-square)]() |
 | **LLM Routing (OpenRouter / Groq)** | [![OpenRouter](https://img.shields.io/badge/OpenRouter-AI%20Model%20Hub-593CFB?style=flat-square)]() [![Groq](https://img.shields.io/badge/Groq-LPU%20Inference-F55036?style=flat-square)]() |
-| **GCP Cloud Run Deployment** | [![Cloud Run](https://img.shields.io/badge/Cloud%20Run-Serverless-4285F4?style=flat-square&logo=google-cloud&logoColor=white)]() |
+| **AWS ECS Fargate Deployment** | [![ECS](https://img.shields.io/badge/ECS%20Fargate-Serverless-FF9900?style=flat-square&logo=amazon-aws&logoColor=white)]() |
 | **CI/CD with GitHub Actions** | [![GitHub Actions](https://img.shields.io/badge/GitHub%20Actions-CI%2FCD-2088FF?style=flat-square&logo=github-actions&logoColor=white)]() |
 
 </div>
@@ -117,8 +117,9 @@ flowchart TB
     end
 
     subgraph Cloud["Cloud Infrastructure"]
-        GCR[Artifact Registry]
-        CR[Cloud Run]
+        ECR[Amazon ECR]
+        ECS[ECS Fargate]
+        ALB[Application Load Balancer]
         GH[GitHub Actions<br/>CI/CD]
     end
 
@@ -138,8 +139,9 @@ flowchart TB
     DB --> MODELS
     PIPELINE --> DB
     PIPELINE --> PGV
-    GH --> GCR
-    GCR --> CR
+    GH --> ECR
+    ECR --> ECS
+    ALB --> ECS
 ```
 
 ---
@@ -221,8 +223,9 @@ flowchart TB
 | Technology | Purpose | Badge |
 |------------|---------|-------|
 | **Docker** | Containerization | ![Docker](https://img.shields.io/badge/Docker-2496ED?style=flat-square&logo=docker&logoColor=white) |
-| **Google Cloud Run** | Serverless container hosting | ![Cloud Run](https://img.shields.io/badge/Cloud%20Run-4285F4?style=flat-square&logo=google-cloud&logoColor=white) |
-| **Artifact Registry** | Docker image storage | ![GCP](https://img.shields.io/badge/Artifact%20Registry-4285F4?style=flat-square&logo=google-cloud&logoColor=white) |
+| **AWS ECS Fargate** | Serverless container hosting | ![AWS](https://img.shields.io/badge/ECS%20Fargate-FF9900?style=flat-square&logo=amazon-aws&logoColor=white) |
+| **Amazon ECR** | Docker image storage | ![AWS](https://img.shields.io/badge/ECR-FF9900?style=flat-square&logo=amazon-aws&logoColor=white) |
+| **AWS ALB** | Application Load Balancer | ![AWS](https://img.shields.io/badge/ALB-FF9900?style=flat-square&logo=amazon-aws&logoColor=white) |
 | **GitHub Actions** | CI/CD automation | ![GitHub Actions](https://img.shields.io/badge/GitHub%20Actions-2088FF?style=flat-square&logo=github-actions&logoColor=white) |
 | **UV** | Ultra-fast Python package manager | ![UV](https://img.shields.io/badge/uv-Package%20Manager-DE5FE9?style=flat-square) |
 
@@ -350,10 +353,12 @@ Real-time streaming with **Server-Sent Events**:
 
 ```
 shopify-shopping-assistant-agent/
+├── .aws/
+│   └── task-definition.json       # ECS Fargate task definition template
 ├── .github/
 │   └── workflows/
 │       ├── ci.yml                 # Lint, type-check, Docker validation, frontend build
-│       └── cd.yml                 # Build image → Artifact Registry → Cloud Run deploy
+│       └── cd.yml                 # Build image → ECR → ECS Fargate deploy
 │
 ├── frontend/                      # React + Vite + Tailwind CSS
 │   ├── src/
@@ -587,8 +592,8 @@ flowchart LR
     CI --> MIGRATE[Migrate Check]
     
     CI --> |Success| CD[CD Workflow]
-    CD --> BUILD[Build Image<br/>+ Push Artifact Registry]
-    CD --> DEPLOY[Deploy Cloud Run]
+    CD --> BUILD[Build Image<br/>+ Push to ECR]
+    CD --> DEPLOY[Deploy ECS Fargate]
     CD --> HEALTH[Health Check /health]
 ```
 
@@ -722,23 +727,18 @@ python -m pipelines.run --schedule
 
 ## Deployment
 
-### Google Cloud Run
+### AWS ECS Fargate
 
-```bash
-# Build & push
-docker build -t gcr.io/PROJECT/shopify-assistant:latest .
-docker push gcr.io/PROJECT/shopify-assistant:latest
+See the full step-by-step guide: [docs/AWS_DEPLOYMENT.md](docs/AWS_DEPLOYMENT.md)
 
-# Deploy
-gcloud run deploy shopify-assistant \
-  --image gcr.io/PROJECT/shopify-assistant:latest \
-  --region us-central1 \
-  --platform managed \
-  --allow-unauthenticated \
-  --set-env-vars "POSTGRES__HOST=...,OPENROUTER_API__KEY=..."
-```
+**Quick summary:**
+1. Create IAM user with ECR + ECS permissions
+2. Create ECR repository (`shopify-assistant`)
+3. Create ECS cluster, task definition, and service with ALB
+4. Add all secrets to GitHub (Settings → Secrets → Actions)
+5. Push to `main` — GitHub Actions handles the rest
 
-The included **GitHub Actions CD workflow** automates this on every push to `main`.
+The included **GitHub Actions CD workflow** automates build, push to ECR, and deploy to ECS on every push to `main`.
 
 
 

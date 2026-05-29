@@ -152,6 +152,12 @@ async def tools_node(
     steps = state.get("steps", [])
     product_sets = state.get("product_sets", [])
 
+    original_query = None
+    for msg in reversed(state["messages"]):
+        if getattr(msg, "type", None) == "human":
+            original_query = msg.content
+            break
+
     for tool_call in tool_calls:
         name = tool_call["name"]
         args = tool_call["args"]
@@ -159,7 +165,6 @@ async def tools_node(
 
         if name == "product_retriever":
             query = args.get("query", "")
-            original_query = args.get("original_query", query)
             retriever_result = await retriever.search(query, original_query=original_query, top_k=10)
             found_products = retriever_result.get("products", [])
             steps.extend(retriever_result.get("steps", []))
