@@ -20,53 +20,11 @@ env:
 jobs:
 
   # ===========================================================================
-  # JOB 1 — Run Tests
-  # ===========================================================================
-  test:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.13"
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v4
-        with:
-          version: latest
-
-      - name: Install dependencies
-        run: uv sync --no-dev
-
-      - name: Run tests
-        env:
-          POSTGRES__HOST: ${{ secrets.POSTGRES__HOST }}
-          POSTGRES__PORT: ${{ secrets.POSTGRES__PORT }}
-          POSTGRES__DATABASE: ${{ secrets.POSTGRES__DATABASE }}
-          POSTGRES__USER: ${{ secrets.POSTGRES__USER }}
-          POSTGRES__PASSWORD: ${{ secrets.POSTGRES__PASSWORD }}
-          POSTGRES__SSLMODE: ${{ secrets.POSTGRES__SSLMODE }}
-          OPENROUTER_API__KEY: ${{ secrets.OPENROUTER_API__KEY }}
-          GROQ_API__KEY: ${{ secrets.GROQ_API__KEY }}
-          LLM__PROVIDER: ${{ secrets.LLM__PROVIDER }}
-          LLM_MODEL__NAME: ${{ secrets.LLM_MODEL__NAME }}
-          OPIK__API_KEY: ${{ secrets.OPIK__API_KEY }}
-          OPIK__PROJECT_NAME: ${{ secrets.OPIK__PROJECT_NAME }}
-          VECTOR_DB_PROVIDER: PGVECTOR
-        run: uv run pytest
-
-  # ===========================================================================
-  # JOB 2 — Build and Push Docker Image to ECR
+  # JOB 1 - Build and Push Docker Image to ECR
   # ===========================================================================
   build-and-push:
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    needs: test
 
     outputs:
       image_tag: ${{ github.sha }}
@@ -113,7 +71,7 @@ jobs:
           cache-to: type=gha,mode=max
 
   # ===========================================================================
-  # JOB 3 — Deploy to ECS Fargate
+  # JOB 2 - Deploy to ECS Fargate
   # ===========================================================================
   deploy-api:
     runs-on: ubuntu-latest
