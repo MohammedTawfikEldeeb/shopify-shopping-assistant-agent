@@ -4,8 +4,17 @@ on:
   push:
     branches:
       - main
-    paths-ignore:
-      - README.md
+    paths:
+      - '.aws/**'
+      - '.github/workflows/cd.yml'
+      - 'docker/**'
+      - 'src/**'
+      - 'pipelines/**'
+      - 'pyproject.toml'
+      - 'requirements.txt'
+      - 'uv.lock'
+      - 'Dockerfile'
+      - 'pytest.ini'
 
 concurrency:
   group: production-deploy
